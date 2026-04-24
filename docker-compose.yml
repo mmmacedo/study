@@ -87,6 +87,16 @@ services:
       # Em produção: usar secrets e start (não start-dev) com TLS obrigatório.
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # KC_HOSTNAME_URL: URL pública usada como 'iss' (issuer) em todos os JWTs emitidos.
+      # Sem isso, Keycloak usa a URL da requisição — tokens emitidos pelo browser
+      # via localhost:8180 têm iss=http://localhost:8180/realms/study, mas quando
+      # o Keycloak valida o id_token_hint no end_session ele compara com o issuer
+      # interno (http://keycloak:8180/...) → mismatch → SSO não é encerrado.
+      # Com KC_HOSTNAME_URL, todos os tokens têm iss=http://localhost:8180/realms/study
+      # independente de como o endpoint foi chamado.
+      # KC_HOSTNAME_URL era a opção v1 (removida no Keycloak 25+).
+      # A opção v2 é KC_HOSTNAME, que aceita URL completa desde o Keycloak 25.
+      KC_HOSTNAME: http://localhost:8180
 
     volumes:
       # O realm-export.json é copiado para o diretório de import do Keycloak.

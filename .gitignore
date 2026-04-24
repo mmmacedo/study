@@ -27,6 +27,12 @@ frontend/.env.local
 .agents/
 skills-lock.json
 
+# ─── Python / Selenium ───────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
 # ─── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

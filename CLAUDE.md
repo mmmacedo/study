@@ -27,7 +27,9 @@ Monorepo de estudo focado em CI/CD, segurança e escalabilidade. Stack: Next.js 
 │   ├── postgres/init.sql           # Cria bancos por serviço (database-per-service)
 │   ├── keycloak/realm-export.json  # Realm pré-configurado com roles e users de teste
 │   └── otel/collector.yaml         # OpenTelemetry Collector — pipeline de telemetria
-├── tests/postman/                  # Coleção Newman para testes de integração
+├── tests/
+│   ├── postman/                    # Coleção Newman para testes de integração
+│   └── selenium/                   # Testes E2E Selenium (OAuth2/PKCE flow)
 ├── Jenkinsfile                     # Pipeline principal do monorepo
 └── docker-compose.yml              # Stack local completa com perfis (app, quality)
 ```
@@ -69,6 +71,20 @@ npm test                # Jest
 npm test -- --testPathPattern=UserList   # teste único
 npm test -- --coverage --watchAll=false  # cobertura (modo CI)
 ```
+
+### Testes Selenium (E2E)
+
+```bash
+cd tests/selenium
+pip install -r requirements.txt
+
+# Headless (padrão / CI)
+pytest test_login.py -v
+
+# Com navegador visível (debug): comentar --headless=new no conftest.py
+```
+
+Pré-condições: `npm run dev` em `:3000` + stack Docker (`postgres keycloak auth-service api-gateway`).
 
 ### Backend (Maven)
 
@@ -133,6 +149,31 @@ Browser/Cliente
                 user-service:8082    (/api/users/**)
                 stream-service:8083  (/stream/**)
 ```
+
+### Frontend — OAuth2/OIDC PKCE
+
+Next.js 15 sem biblioteca OAuth — usa Web Crypto API nativa (mais educativo, zero dependências extras).
+
+```
+:3000/            clica "Entrar com Keycloak"
+  → gera code_verifier + code_challenge (PKCE, Web Crypto)
+  → salva code_verifier no sessionStorage
+  → redireciona para :8180?code_challenge=...&client_id=study-api
+      preenche usuário/senha no form nativo do Keycloak
+  → :3000/callback?code=...
+      POST ao Keycloak: code + code_verifier → access_token + refresh_token + id_token
+      salva tokens no sessionStorage
+  → :3000/dashboard
+      GET /api/auth/introspect (proxy Next.js → api-gateway → auth-service)
+      exibe preferredUsername, roles, exp
+      botão Sair → end_session Keycloak (limpa cookie SSO) → :3000/
+```
+
+Proxy em `next.config.ts`: `/api/auth/*` → `http://localhost:8080/auth/*` (evita CORS no dashboard).
+A troca do code vai direto ao Keycloak — `webOrigins: ["*"]` no realm permite isso.
+
+**Tokens salvos no sessionStorage** (não localStorage): escopo de aba, não persiste entre sessões.
+`id_token` é salvo além de `access_token` e `refresh_token` — necessário para o `id_token_hint` no logout.
 
 ### Autenticação (OAuth2/OIDC)
 
@@ -331,6 +372,99 @@ tc.host=tcp://localhost:2376
 
 > Usar `tc.host` (não `docker.host` — propriedade errada é silenciosamente ignorada).
 > O proxy precisa ser reiniciado após reboot do WSL2 — o script fica em `/tmp/docker_proxy.py`.
+
+## Keycloak — Gotchas de Configuração
+
+### KC_HOSTNAME obrigatório no docker-compose
+
+```yaml
+keycloak:
+  environment:
+    KC_HOSTNAME: http://localhost:8180   # opção v2 (Keycloak 25+)
+```
+
+**Por quê:** sem `KC_HOSTNAME`, o Keycloak usa o hostname da requisição como issuer (`iss`) do JWT.
+Requests do browser chegam como `localhost:8180`; chamadas internas (auth-service) chegam como
+`keycloak:8180`. Os tokens ficam com issuers diferentes.
+
+Consequência prática: o `id_token_hint` enviado no `end_session` tem `iss=http://localhost:8180/...`
+mas o Keycloak valida contra `iss=http://keycloak:8180/...` → mismatch → Keycloak exibe página de
+confirmação em vez de redirecionar automaticamente para `post_logout_redirect_uri` → SSO não encerra
+→ próximo login usa auto-login silencioso.
+
+`KC_HOSTNAME_URL` era a opção v1 (removida no Keycloak 25+). Usar `KC_HOSTNAME` (v2).
+
+### Logout RP-Initiated (Keycloak 26.x)
+
+Para que o Keycloak redirecione automaticamente ao `post_logout_redirect_uri` sem exibir
+confirmação, o request ao endpoint `logout` precisa incluir `client_id` E (opcionalmente)
+`id_token_hint`:
+
+```ts
+const params = new URLSearchParams({
+  post_logout_redirect_uri: "http://localhost:3000",
+  client_id: CLIENT_ID,
+  ...(idToken ? { id_token_hint: idToken } : {}),
+});
+window.location.href = `${END_SESSION_URL}?${params}`;
+```
+
+A chamada de revogação do `refresh_token` ao auth-service deve ser **fire-and-forget** (sem `await`).
+Com `await`, o redirect aguarda o RestClient do auth-service resolver o Keycloak interno — sem timeout
+configurado, isso pode bloquear por >30s.
+
+## Testes Selenium — Padrões e Gotchas
+
+### Arquivos
+
+```
+tests/selenium/
+├── requirements.txt    # selenium==4.21.0, pytest==8.2.0
+├── conftest.py         # fixture driver (headless), helpers login() / wait_for_url()
+└── test_login.py       # 8 testes: landing → login → dashboard → logout → admin → wrong-pass
+```
+
+### Padrão de espera pós-logout (SSO redirect)
+
+O redirect de `end_session` (`:8180` → `:3000`) pode levar 25–30s. Usar dois `WebDriverWait`
+separados evita timeout quando o render da página consome o tempo que sobrou:
+
+```python
+# CORRETO: separa tempo do redirect do tempo de render
+driver.find_element(By.CSS_SELECTOR, '[data-testid="logout-button"]').click()
+wait_for_url(driver, "localhost:3000", timeout=30)   # aguarda redirect
+WebDriverWait(driver, 20).until(                     # aguarda render
+    EC.visibility_of_element_located((By.CSS_SELECTOR, '[data-testid="login-button"]'))
+)
+
+# ERRADO: único wait consome todo o budget no redirect, timeout antes de render
+WebDriverWait(driver, 30).until(EC.visibility_of_element_located(...))
+```
+
+### Isolação de SSO entre testes
+
+CDP `Network.clearBrowserCookies` não limpa o SSO de forma confiável no Chrome headless.
+Para testes que precisam forçar o form de login independente do estado SSO, usar `prompt=login`
+diretamente na URL do Keycloak:
+
+```python
+from urllib.parse import urlencode
+params = urlencode({
+    "client_id": "study-api", "redirect_uri": "http://localhost:3000/callback",
+    "response_type": "code", "scope": "openid", "prompt": "login",
+})
+driver.get(f"http://localhost:8180/realms/study/protocol/openid-connect/auth?{params}")
+```
+
+### Seletor de erro do Keycloak 26.x (tema PatternFly 5)
+
+O tema antigo usava `.alert-error` e `#input-error`. O tema padrão do Keycloak 26.x usa:
+
+```python
+# Cobre Keycloak 26.x (PF5) e versões anteriores
+EC.presence_of_element_located((By.CSS_SELECTOR, "[id^='input-error'], .alert-error"))
+# No Keycloak 26.x o elemento real é #input-error-username ou #input-error-password
+```
 
 ## Kubernetes — Conceitos em `k8s/`
 
