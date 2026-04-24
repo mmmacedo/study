@@ -73,6 +73,65 @@ services:
       start_period: 10s # aguarda 10s antes de iniciar as verificações (boot do postgres)
 
   # ===========================================================================
+  # Keycloak — Identity Provider (IdP) OAuth2/OIDC
+  # ===========================================================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    # start-dev: modo desenvolvimento (HTTP sem TLS, logs verbosos, reinício rápido)
+    # --import-realm: importa arquivos JSON de /opt/keycloak/data/import/ na inicialização.
+    #   Idempotente: pula o import se o realm já existir (ex: após restart sem down -v).
+    command: start-dev --import-realm --http-port=8180
+
+    environment:
+      # Credenciais do console de administração (http://localhost:8180/admin)
+      # Em produção: usar secrets e start (não start-dev) com TLS obrigatório.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+
+    volumes:
+      # O realm-export.json é copiado para o diretório de import do Keycloak.
+      # O Keycloak importa automaticamente todos os arquivos .json neste diretório.
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+
+    ports:
+      - "8180:8180"
+
+    healthcheck:
+      # A imagem do Keycloak (UBI 9 Micro) não inclui curl nem wget.
+      # Usamos o built-in /dev/tcp do bash para verificar que a porta está aberta.
+      # Combinado com start_period: 60s, garante que o realm já foi importado
+      # antes de o probe começar a verificar.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8180"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      # Keycloak precisa de ~30-60s para inicializar + importar o realm na primeira vez.
+      start_period: 60s
+
+  # ===========================================================================
+  # Redis — cache de sessão, rate limiting e (opcionalmente) Redis Streams broker
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    # Por que redis:7-alpine?
+    #   - Tag explícita: reprodutibilidade (sem surpresas de :latest)
+    #   - Alpine: imagem mínima (~30 MB)
+    #   - Redis 7: suporte a Redis Streams, ACLs melhoradas e multi-part AOF
+
+    ports:
+      # Expõe no host para inspeção local com redis-cli ou RedisInsight.
+      # Em produção: sem exposição direta, apenas serviços internos acessam.
+      - "6379:6379"
+
+    healthcheck:
+      # redis-cli ping retorna "PONG" se o servidor está respondendo.
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ===========================================================================
   # user-service — CRUD de usuários (Spring MVC + JPA + Flyway)
   # ===========================================================================
   user-service:
@@ -91,6 +150,10 @@ services:
       # O Docker Compose cria uma rede interna onde cada serviço é resolvível
       # pelo seu nome — "postgres" resolve para o IP do container PostgreSQL.
       SPRING_PROFILES_ACTIVE: docker
+      # "keycloak" resolve para o container do Keycloak na rede Docker interna.
+      # Sem isso, o user-service tenta http://localhost:8180 de dentro do container
+      # (que não existe) e falha silenciosamente ao validar JWTs — retornando 401.
+      KEYCLOAK_URL: http://keycloak:8180
 
       # SPRING_DATASOURCE_USERNAME e SPRING_DATASOURCE_PASSWORD usam os
       # defaults definidos no application.yml (postgres/postgres) — não é
@@ -127,6 +190,74 @@ services:
       # start_period: tempo que o Spring Boot precisa para iniciar antes de
       # começar a verificar. Inclui: JVM startup + Flyway migrations + Hibernate.
       start_period: 40s
+
+  # ===========================================================================
+  # auth-service — wrapper REST sobre Keycloak + audit log de autenticação
+  # ===========================================================================
+  auth-service:
+    build:
+      context: backend
+      dockerfile: auth-service/Dockerfile
+
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # "keycloak" resolve para o container do Keycloak na rede Docker interna.
+      # O auth-service delega token/refresh/logout ao Keycloak via RestClient.
+      KEYCLOAK_URL: http://keycloak:8180
+
+    ports:
+      - "8081:8081"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ===========================================================================
+  # api-gateway — ponto de entrada único (Spring Cloud Gateway + WebFlux)
+  # ===========================================================================
+  api-gateway:
+    build:
+      # Contexto: backend/ para o Maven ter acesso ao parent pom.xml
+      context: backend
+      dockerfile: api-gateway/Dockerfile
+
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # URLs internas — Docker Compose resolve pelo nome do serviço
+      USER_SERVICE_URL: http://user-service:8082
+      AUTH_SERVICE_URL: http://auth-service:8081
+      STREAM_SERVICE_URL: http://stream-service:8083
+      # Redis: hostname do serviço na rede Docker interna
+      REDIS_HOST: redis
+      # Keycloak: quando implementado, será http://keycloak:8180
+      # Sem Keycloak rodando, o gateway sobe mas rejeita todos os JWTs (401).
+      # jwk-set-uri é lazy — o gateway não trava na ausência do Keycloak.
+      KEYCLOAK_URL: http://keycloak:8180
+
+    ports:
+      # Único ponto de entrada público — toda a stack é acessada via :8080
+      - "8080:8080"
+
+    depends_on:
+      redis:
+        condition: service_healthy
+      # user-service não é listado aqui: o api-gateway deve subir mesmo
+      # que um serviço downstream esteja fora — o circuit breaker trata isso.
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Gateway é rápido de subir (sem Flyway, sem JPA) — 20s é suficiente
+      start_period: 20s
 
 # =============================================================================
 # Volumes nomeados

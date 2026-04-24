@@ -37,6 +37,11 @@ WORKDIR /build
 # de dependências (300+ MB baixados a cada push).
 COPY pom.xml ./
 COPY user-service/pom.xml user-service/
+# O parent pom.xml declara todos os módulos — o Maven valida a existência de cada um
+# ao resolver o reactor. Sem este COPY, o build falha com
+# "Child module /build/api-gateway does not exist".
+COPY api-gateway/pom.xml api-gateway/
+COPY auth-service/pom.xml auth-service/
 
 # Pré-baixa as dependências do projeto (compile/runtime/test) para o repositório local.
 # dependency:resolve em vez de dependency:go-offline:

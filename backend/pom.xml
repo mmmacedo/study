@@ -47,6 +47,8 @@
     <modules>
         <!-- Adicionar módulos conforme cada serviço for implementado -->
         <module>user-service</module>
+        <module>api-gateway</module>
+        <module>auth-service</module>
     </modules>
 
     <!--
