@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        POM DO MÓDULO: api-gateway
+        ===========================
+        Herda do parent POM:
+          - Spring Boot 3.4.4
+          - Java 25
+          - Actuator, OTEL tracing, OTLP metrics, Lombok, Test, Testcontainers JUnit5
+
+        Este POM só declara o que é ESPECÍFICO do api-gateway.
+
+        DIFERENÇA FUNDAMENTAL em relação ao user-service:
+          O api-gateway usa Spring Cloud Gateway, que é REATIVO (WebFlux + Netty).
+          NÃO usa Spring MVC nem Tomcat. Consequências:
+            - SecurityWebFilterChain em vez de SecurityFilterChain
+            - Sem JPA, sem Flyway, sem banco de dados
+            - Sem virtual threads (WebFlux usa event loop, não thread pool)
+            - WebTestClient nos testes em vez de MockMvc
+    -->
+    <parent>
+        <groupId>com.study</groupId>
+        <artifactId>backend-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>api-gateway</artifactId>
+    <name>api-gateway</name>
+
+    <dependencies>
+
+        <!--
+            Spring Cloud Gateway
+            =====================
+            O coração do api-gateway. Baseado em Spring WebFlux (Project Reactor).
+
+            O que inclui automaticamente:
+              - spring-boot-starter-webflux (Netty como servidor HTTP/2)
+              - spring-cloud-gateway-server (predicates, filters, route builders)
+              - reactor-netty (cliente HTTP reativo para fazer as chamadas upstream)
+
+            Por que WebFlux e não MVC?
+              O gateway faz proxy de requisições — a maior parte do tempo está aguardando
+              I/O (resposta do upstream). WebFlux lida com milhares de conexões simultâneas
+              com poucos threads via event loop, sem bloquear uma thread por request.
+              MVC com Tomcat bloquearia uma thread por conexão ativa — impraticável para gateway.
+
+            Configuração de rotas: application.yml (spring.cloud.gateway.routes).
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway</artifactId>
+        </dependency>
+
+        <!--
+            OAuth2 Resource Server — validação JWT
+            ========================================
+            Configura o gateway como Resource Server OAuth2. Responsabilidades:
+              1. Intercepta o header Authorization: Bearer <token>
+              2. Valida a assinatura JWT usando as chaves públicas do Keycloak (JWKS endpoint)
+              3. Extrai as claims (sub, roles, etc.) e popula o SecurityContext
+              4. Rejeita requests sem token ou com token inválido (HTTP 401)
+
+            Com WebFlux no classpath (via spring-cloud-starter-gateway), o Spring Boot
+            auto-configura a variante REATIVA: ReactiveJwtDecoder + SecurityWebFilterChain.
+
+            Os serviços downstream (user-service) também validam JWT independentemente —
+            isso é zero-trust dentro da rede interna.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!--
+            Spring Data Redis Reactive — rate limiting
+            ============================================
+            Usado pelo filtro RequestRateLimiter do Spring Cloud Gateway.
+
+            O gateway implementa o algoritmo token bucket via Redis:
+              - replenishRate: tokens adicionados por segundo (taxa sustentada)
+              - burstCapacity: máximo de tokens no bucket (pico permitido)
+              - requestedTokens: tokens consumidos por request (normalmente 1)
+
+            Por que Redis?
+              O rate limiter precisa ser distribuído — se temos 3 replicas do gateway,
+              cada instância precisaria da mesma contagem de tokens. Redis centraliza
+              esse estado. Uma instância local (em memória) deixaria usuários contornar
+              o limite chamando replicas diferentes.
+
+            Variante reativa: spring-boot-starter-data-redis-reactive usa Lettuce
+            (cliente Redis reativo, não bloqueante) — correto para WebFlux.
+            A versão síncrona bloquearia a event loop.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+        </dependency>
+
+        <!--
+            Spring Cloud Circuit Breaker — Resilience4j Reactive
+            =======================================================
+            Implementa o padrão Circuit Breaker para proteger os serviços downstream.
+
+            Estados do circuit breaker:
+              CLOSED  → tráfego normal; falhas são contadas
+              OPEN    → após X% de falhas no janela deslizante:
+                          requests são redirecionados para o fallback imediatamente
+                          sem tentar o upstream (fail-fast)
+              HALF-OPEN → após wait-duration: permite N requests de teste
+                          para verificar se o upstream voltou
+
+            Por que evitar falhas em cascata?
+              Sem circuit breaker: se o user-service trava, todas as threads do gateway
+              ficam aguardando timeout (5s), o gateway fica sem threads disponíveis,
+              e outros serviços (auth, stream) também ficam inacessíveis.
+
+            A variante reactor-resilience4j é não-bloqueante — integra com Reactor/WebFlux.
+            A variante padrão (resilience4j) bloquearia a event loop.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId>
+        </dependency>
+
+        <!-- TESTES ============================================================ -->
+
+        <!--
+            Spring Security Test — WebFlux
+            ================================
+            Utilitários para testar endpoints protegidos em aplicações WebFlux:
+              SecurityMockServerConfigurers.mockJwt() → simula JWT autenticado
+              .mutateWith(mockJwt()) no WebTestClient
+
+            O gateway usa SecurityWebFilterChain (não SecurityFilterChain do MVC),
+            portanto precisamos dos configurers reativos, não do @WithMockUser do MVC.
+
+            scope=test: não vai para o JAR de produção.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Maven Compiler Plugin — apenas Lombok
+                ======================================
+                O api-gateway não usa MapStruct (sem entidades para mapear).
+                Apenas o Lombok annotation processor é necessário para
+                @Slf4j, @RequiredArgsConstructor, etc.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

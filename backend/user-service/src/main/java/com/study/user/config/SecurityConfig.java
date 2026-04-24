@@ -2,11 +2,16 @@ package com.study.user.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Configuração de segurança do user-service.
@@ -69,13 +74,54 @@ public class SecurityConfig {
             //   1. Filtro extrai o token do header Authorization: Bearer <token>
             //   2. Spring busca as chaves públicas no jwk-set-uri (Keycloak)
             //   3. Verifica assinatura, expiração e issuer do JWT
-            //   4. Converte claims em Spring Security Authentication
-            //   5. @PreAuthorize pode então checar roles extraídas do JWT
-            //
-            // Customizer.withDefaults() usa a configuração do application.yml
-            // (spring.security.oauth2.resourceserver.jwt.jwk-set-uri)
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+            //   4. jwtAuthenticationConverter() extrai roles de realm_access.roles
+            //   5. @PreAuthorize pode então checar as roles mapeadas
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+            );
 
         return http.build();
+    }
+
+    /**
+     * Converte claims do JWT do Keycloak em GrantedAuthority do Spring Security.
+     *
+     * Por que é necessário:
+     *   O Spring Security por padrão lê roles da claim "scope" ou "scp" do JWT.
+     *   O Keycloak, porém, publica roles na claim aninhada "realm_access.roles":
+     *
+     *     {
+     *       "realm_access": {
+     *         "roles": ["USER", "ADMIN", "offline_access", "uma_authorization"]
+     *       }
+     *     }
+     *
+     *   Sem este converter, @PreAuthorize("hasRole('ADMIN')") nunca é satisfeito —
+     *   o Spring Security simplesmente não encontra a role no lugar errado.
+     *
+     * Mapeamento aplicado:
+     *   "ADMIN" → SimpleGrantedAuthority("ROLE_ADMIN")
+     *   "USER"  → SimpleGrantedAuthority("ROLE_USER")
+     *
+     *   O prefixo "ROLE_" é adicionado porque hasRole('ADMIN') no SpEL
+     *   busca exatamente "ROLE_ADMIN" na lista de authorities.
+     *   hasAuthority('ADMIN') buscaria sem prefixo — prefira hasRole para clareza.
+     */
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        var converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
+            if (realmAccess == null) return List.of();
+
+            @SuppressWarnings("unchecked")
+            var roles = (List<String>) realmAccess.get("roles");
+            if (roles == null) return List.of();
+
+            return roles.stream()
+                    .map(role -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + role))
+                    .toList();
+        });
+        return converter;
     }
 }

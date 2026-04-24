@@ -1,0 +1,189 @@
+# =============================================================================
+# api-gateway — configuração da aplicação
+#
+# O api-gateway é REATIVO (WebFlux + Netty). Não usa Tomcat.
+# Consequência principal: sem spring.threads.virtual.enabled — virtual threads
+# são para o modelo de servlet (Tomcat/MVC). WebFlux usa event loop.
+#
+# Profiles:
+#   Base (sem profile): desenvolvimento local — serviços em localhost
+#   docker: container — serviços resolvidos pelo hostname Docker interno
+# =============================================================================
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  # ===========================================================================
+  # Redis — rate limiting distribuído
+  # ===========================================================================
+  data:
+    redis:
+      # Padrão: Redis local. Sobrescrito pelo profile docker (host: redis).
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Sem senha em desenvolvimento. Em produção: usar REDIS_PASSWORD via secret.
+
+  # ===========================================================================
+  # Segurança OAuth2 — validação JWT
+  # ===========================================================================
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # jwk-set-uri (lazy) em vez de issuer-uri (eager):
+          # issuer-uri faz uma chamada ao Keycloak NO STARTUP — o gateway não sobe
+          # se o Keycloak estiver fora. jwk-set-uri só é chamado na primeira
+          # requisição que precisar validar um JWT.
+          jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/study/protocol/openid-connect/certs
+
+  # ===========================================================================
+  # Spring Cloud Gateway — rotas
+  # ===========================================================================
+  cloud:
+    gateway:
+      routes:
+
+        # -----------------------------------------------------------------------
+        # auth-service: endpoints de autenticação (login, refresh, logout)
+        # Público no SecurityConfig — o cliente ainda não tem JWT aqui.
+        # -----------------------------------------------------------------------
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/auth/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: auth-service-cb
+                fallbackUri: forward:/fallback/auth-service
+
+        # -----------------------------------------------------------------------
+        # user-service: CRUD de usuários
+        # Protegido — exige JWT válido (validado pelo SecurityConfig antes de rotear).
+        # Rate limiting via Redis para evitar abuso.
+        # -----------------------------------------------------------------------
+        - id: user-service
+          uri: ${USER_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/users/**
+          filters:
+            # Rate limiter: algoritmo token bucket no Redis
+            #   replenishRate: 10 tokens adicionados por segundo
+            #   burstCapacity: até 20 tokens em rajada
+            #   requestedTokens: cada request consome 1 token
+            # Resultado: usuário pode fazer 10 req/s sustentados, até 20 em pico.
+            # Resposta quando bucket vazio: HTTP 429 Too Many Requests.
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+                # SpEL referenciando o bean KeyResolver definido em RateLimiterConfig
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: user-service-cb
+                fallbackUri: forward:/fallback/user-service
+
+        # -----------------------------------------------------------------------
+        # stream-service: SSE + mensageria reativa
+        # timeout maior (30s) para suportar conexões SSE de longa duração.
+        # -----------------------------------------------------------------------
+        - id: stream-service
+          uri: ${STREAM_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/stream/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: stream-service-cb
+                fallbackUri: forward:/fallback/stream-service
+
+# =============================================================================
+# Resilience4j — configuração dos circuit breakers
+# =============================================================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      user-service-cb:
+        # Janela deslizante de 10 requests para calcular taxa de falha
+        sliding-window-size: 10
+        # Abre o circuit se >= 50% dos últimos 10 requests falharem
+        failure-rate-threshold: 50
+        # Permanece aberto por 10s antes de tentar HALF-OPEN
+        wait-duration-in-open-state: 10s
+        # Em HALF-OPEN: permite 3 requests de teste antes de decidir OPEN/CLOSED
+        permitted-number-of-calls-in-half-open-state: 3
+      auth-service-cb:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+      stream-service-cb:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+
+  timelimiter:
+    instances:
+      user-service-cb:
+        # Timeout de 5s — se o user-service não responder em 5s, conta como falha
+        timeout-duration: 5s
+      auth-service-cb:
+        timeout-duration: 5s
+      stream-service-cb:
+        # SSE pode ter conexões de longa duração — timeout mais generoso
+        timeout-duration: 30s
+
+# =============================================================================
+# Actuator — endpoints de operação
+# =============================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_ENDPOINT:http://localhost:4318}/v1/traces
+    metrics:
+      export:
+        url: ${OTEL_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 30s
+
+# =============================================================================
+# Logging estruturado
+# =============================================================================
+logging:
+  structured:
+    format:
+      console: ecs
+
+---
+# =============================================================================
+# Profile: docker
+# Ativado quando SPRING_PROFILES_ACTIVE=docker (ver docker-compose.yml)
+# Sobrescreve apenas os valores que mudam em ambiente de container.
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: docker
+  data:
+    redis:
+      # "redis" resolve para o container Redis na rede Docker interna
+      host: redis
