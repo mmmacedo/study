@@ -1,0 +1,138 @@
+# =============================================================================
+# docker-compose.yml — Stack local de desenvolvimento
+#
+# Filosofia de uso:
+#   Este arquivo é a fonte de verdade para subir o ambiente local de forma
+#   reproduzível. Cada desenvolvedor tem exatamente o mesmo ambiente.
+#
+# Profiles (grupos de serviços):
+#   Sem profile: infraestrutura base (postgres, redis, broker, keycloak)
+#   --profile app: sobe os microserviços da aplicação
+#   --profile quality: ferramentas de análise (SonarQube)
+#   --profile observability: OTel Collector + Jaeger
+#
+# Estado atual: user-service implementado, demais serviços serão adicionados
+# conforme forem implementados.
+#
+# Comandos comuns:
+#   docker compose up -d postgres          # apenas banco
+#   docker compose --profile app up -d    # infra + serviços
+#   docker compose logs -f user-service   # logs em tempo real
+#   docker compose down -v                # para tudo e remove volumes
+# =============================================================================
+
+services:
+
+  # ===========================================================================
+  # PostgreSQL — banco de dados relacional
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    # Por que postgres:16-alpine e não :latest?
+    #   - Tag explícita garante reprodutibilidade: :latest pode mudar de versão
+    #     silenciosamente e quebrar o ambiente na próxima atualização de imagem.
+    #   - Alpine: versão mínima (~85 MB vs ~380 MB da imagem padrão).
+    #   - Postgres 16: versão LTS estável com suporte a gen_random_uuid() nativo.
+
+    environment:
+      # Credenciais do superuser do PostgreSQL.
+      # Em desenvolvimento: valores fixos para simplicidade.
+      # Em produção: usar Docker Secrets ou variáveis injetadas pelo CI/CD.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # POSTGRES_DB não é definido: o init.sql cria os bancos individualmente
+      # seguindo o padrão database-per-service.
+
+    volumes:
+      # init.sql: executado na primeira inicialização do container (quando o
+      # volume ainda não existe). Cria os bancos de cada serviço.
+      # Arquivo em: infra/postgres/init.sql
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+      # Volume nomeado para persistência: os dados sobrevivem a `docker compose down`.
+      # Use `docker compose down -v` para apagar os dados (reset completo).
+      - postgres_data:/var/lib/postgresql/data
+
+    ports:
+      # Expõe a porta 5432 no host para conectar com DBeaver, psql ou qualquer
+      # cliente local sem precisar executar comandos dentro do container.
+      # Em produção nunca expomos diretamente — apenas os serviços internos acessam.
+      - "5432:5432"
+
+    healthcheck:
+      # pg_isready: utilitário nativo do PostgreSQL que verifica se o servidor
+      # está aceitando conexões. Mais preciso que verificar se a porta está aberta,
+      # pois o PostgreSQL pode estar ouvindo na porta mas ainda inicializando.
+      #
+      # depends_on com condition: service_healthy nos serviços downstream garante
+      # que o Spring Boot só tenta conectar após o banco estar pronto.
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s      # verifica a cada 5 segundos
+      timeout: 5s       # considera falha se não responder em 5s
+      retries: 5        # após 5 falhas consecutivas: container = unhealthy
+      start_period: 10s # aguarda 10s antes de iniciar as verificações (boot do postgres)
+
+  # ===========================================================================
+  # user-service — CRUD de usuários (Spring MVC + JPA + Flyway)
+  # ===========================================================================
+  user-service:
+    build:
+      # context: backend/
+      #   O build Docker precisa do diretório backend/ inteiro porque o Maven
+      #   precisa do parent pom.xml para resolver as versões de dependências.
+      #   Se o contexto fosse user-service/, o COPY pom.xml falharia.
+      context: backend
+      # dockerfile relativo ao contexto (backend/).
+      dockerfile: user-service/Dockerfile
+
+    environment:
+      # Ativa o profile "docker" do Spring Boot, que sobrescreve o datasource
+      # de localhost para o hostname "postgres" (nome do serviço no compose).
+      # O Docker Compose cria uma rede interna onde cada serviço é resolvível
+      # pelo seu nome — "postgres" resolve para o IP do container PostgreSQL.
+      SPRING_PROFILES_ACTIVE: docker
+
+      # SPRING_DATASOURCE_USERNAME e SPRING_DATASOURCE_PASSWORD usam os
+      # defaults definidos no application.yml (postgres/postgres) — não é
+      # necessário redeclarar aqui para desenvolvimento.
+
+      # OTel Collector: quando adicionarmos o profile observability,
+      # descomentar e configurar:
+      # OTEL_ENDPOINT: http://otel-collector:4318
+      # Sem isso, o OTLP exporter tenta http://localhost:4318 (inacessível no
+      # container) e falha silenciosamente — funcionalidade não é afetada.
+
+    ports:
+      # Expõe :8082 no host para chamadas diretas via curl/Postman sem gateway.
+      # Útil em desenvolvimento; em produção todo tráfego passa pelo api-gateway.
+      - "8082:8082"
+
+    depends_on:
+      postgres:
+        # condition: service_healthy garante que o Spring Boot só inicia após
+        # o PostgreSQL estar pronto para aceitar conexões.
+        # Sem isso: Spring tenta conectar, falha com "Connection refused",
+        # e o container encerra com erro — mesmo com restart: on-failure,
+        # isso gera logs confusos e atrasa o startup.
+        condition: service_healthy
+
+    healthcheck:
+      # Verifica o endpoint de health do Actuator — o mesmo que o Kubernetes usa.
+      # wget é disponível na imagem Alpine; curl não é instalado por padrão.
+      # -qO-: silencioso, imprime para stdout (para que Docker leia o exit code).
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # start_period: tempo que o Spring Boot precisa para iniciar antes de
+      # começar a verificar. Inclui: JVM startup + Flyway migrations + Hibernate.
+      start_period: 40s
+
+# =============================================================================
+# Volumes nomeados
+# =============================================================================
+volumes:
+  postgres_data:
+    # Volume gerenciado pelo Docker: persiste em /var/lib/docker/volumes/
+    # Sobrevive a `docker compose down` mas não a `docker compose down -v`.
+    # Para inspecionar: docker volume inspect claudin_postgres_data
