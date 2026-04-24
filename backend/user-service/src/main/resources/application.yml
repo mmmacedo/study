@@ -1,0 +1,138 @@
+# =============================================================================
+# user-service — configuração da aplicação
+#
+# Conceito de profiles Spring Boot:
+#   O arquivo base (sem sufixo) define os valores padrão para desenvolvimento local.
+#   O profile "docker" sobrescreve apenas o que muda quando rodando em container.
+#   Isso evita duplicação — só as diferenças são redeclaradas.
+# =============================================================================
+
+server:
+  port: 8082
+
+spring:
+  application:
+    # Nome usado em logs, traces (span.service.name) e no Spring Cloud
+    name: user-service
+
+  datasource:
+    # Valor padrão: banco local. Sobrescrito pela variável de ambiente em produção.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/user_db}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+
+    hikari:
+      # Pool de conexões HikariCP
+      # maximum-pool-size: máximo de conexões simultâneas ao banco.
+      # Regra prática: (núcleos_CPU * 2) + spindle_disks. Para estudo: 10.
+      maximum-pool-size: 10
+      # minimum-idle: conexões mantidas abertas mesmo sem carga (reduz latência no primeiro request)
+      minimum-idle: 2
+      # connection-timeout: tempo máximo aguardando uma conexão do pool (ms)
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      # validate: Hibernate verifica se o schema do banco bate com as entidades,
+      # mas NUNCA altera o banco. Alterações são responsabilidade do Flyway.
+      # NUNCA use create, create-drop ou update em produção.
+      ddl-auto: validate
+    show-sql: ${JPA_SHOW_SQL:false}
+    open-in-view: false
+    # open-in-view: false evita o antipadrão OSIV (Open Session In View),
+    # que mantém a sessão JPA aberta durante toda a renderização da resposta HTTP.
+    # Com OSIV, queries lazy acontecem fora da transação — difícil de debugar.
+    properties:
+      hibernate:
+        # Dialeto inferido automaticamente pelo Spring Boot — não precisa declarar.
+        # format_sql: formata o SQL no log (útil em desenvolvimento com show-sql: true)
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # baseline-on-migrate: true permite rodar Flyway em banco que já tem dados
+    # (útil na primeira execução quando o banco foi criado manualmente)
+    baseline-on-migrate: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # jwk-set-uri em vez de issuer-uri:
+          # issuer-uri faz uma chamada ao Keycloak NO STARTUP para buscar a
+          # configuração OIDC — a aplicação não sobe se o Keycloak estiver fora.
+          # jwk-set-uri é lazy: a chamada só acontece na primeira requisição
+          # que precisar validar um JWT. Permite subir o serviço sem Keycloak.
+          jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/study/protocol/openid-connect/certs
+
+  threads:
+    # Virtual threads (Java 25 + Spring Boot 3.4):
+    # O Tomcat usa virtual threads para processar requests em vez de threads do pool.
+    # Benefício: throughput muito maior em operações de I/O (queries ao banco, chamadas HTTP).
+    # Sem custo: virtual threads são baratos de criar — milhares podem existir simultaneamente.
+    # Não se aplica ao stream-service (WebFlux já é reativo/non-blocking por natureza).
+    virtual:
+      enabled: true
+
+# =============================================================================
+# Actuator — endpoints de operação
+# =============================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        # health: liveness e readiness probes do Kubernetes
+        # metrics: métricas em formato JSON (inspeção local)
+        # prometheus: mantido para compatibilidade com ferramentas de debug locais
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        # Habilita /actuator/health/liveness e /actuator/health/readiness
+        # Kubernetes usa esses endpoints para saber quando reiniciar ou desviar tráfego.
+        enabled: true
+      show-details: when_authorized
+
+  # Tracing distribuído via OpenTelemetry
+  tracing:
+    sampling:
+      # 1.0 = 100% dos requests são trackeados (desenvolvimento)
+      # Produção: 0.05–0.1 (5–10%) para reduzir volume de dados
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      # Envia spans ao OTel Collector via OTLP HTTP.
+      # O Collector roteia para o Jaeger.
+      endpoint: ${OTEL_ENDPOINT:http://localhost:4318}/v1/traces
+    metrics:
+      export:
+        # Envia métricas ao OTel Collector via OTLP HTTP.
+        url: ${OTEL_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 30s   # intervalo de exportação
+
+# =============================================================================
+# Logging estruturado
+# =============================================================================
+logging:
+  structured:
+    format:
+      # ECS (Elastic Common Schema): emite JSON com campos padronizados.
+      # O trace.id e span.id são injetados automaticamente em cada linha de log,
+      # permitindo correlacionar logs com traces no Jaeger pelo mesmo ID.
+      console: ecs
+
+---
+# =============================================================================
+# Profile: docker
+# Ativado quando SPRING_PROFILES_ACTIVE=docker (ver docker-compose.yml)
+# Sobrescreve apenas os valores que mudam em ambiente de container.
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    # "postgres" resolve para o container do PostgreSQL na rede Docker interna.
+    # Localmente seria "localhost" — daí a necessidade do profile.
+    url: jdbc:postgresql://postgres:5432/user_db

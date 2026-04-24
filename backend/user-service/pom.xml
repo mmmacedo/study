@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        POM DO MÓDULO: user-service
+        ============================
+        Herda tudo do parent POM:
+          - Spring Boot 3.4.4
+          - Java 25
+          - Actuator, OTEL tracing, OTLP metrics, Lombok, Test, Testcontainers JUnit5
+
+        Este POM só declara o que é ESPECÍFICO do user-service.
+        Versões já são gerenciadas pelo parent — não repetimos aqui.
+    -->
+    <parent>
+        <groupId>com.study</groupId>
+        <artifactId>backend-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>user-service</artifactId>
+    <name>user-service</name>
+
+    <dependencies>
+
+        <!--
+            Spring Web (Spring MVC)
+            ========================
+            Sobe um servidor Tomcat embutido e habilita:
+              - @RestController, @GetMapping, @PostMapping, etc.
+              - DispatcherServlet (roteamento de requests)
+              - Conversor JSON automático via Jackson
+              - Suporte a @Valid (Bean Validation)
+
+            Alternativa reativa seria spring-boot-starter-webflux,
+            mas user-service é CRUD síncrono — MVC é mais simples e adequado.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--
+            Spring Data JPA
+            ================
+            Integra Hibernate (implementação JPA) com Spring:
+              - @Entity, @Table, @Column — mapeamento objeto-relacional
+              - JpaRepository — CRUD pronto sem SQL
+              - @Transactional — gerenciamento de transações declarativo
+              - Queries derivadas de método (findByEmail, existsByEmail, etc.)
+
+            Internamente usa HikariCP como pool de conexões (mais rápido que c3p0/DBCP).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+            Bean Validation (Jakarta Validation)
+            =====================================
+            Habilita anotações de validação nos DTOs de entrada:
+              @NotBlank, @Email, @Size, @NotNull, etc.
+
+            Funciona em conjunto com @Valid no controller:
+              public ResponseEntity<...> create(@Valid @RequestBody CreateUserRequest req)
+
+            Violações geram MethodArgumentNotValidException, capturada pelo
+            GlobalExceptionHandler e convertida em ProblemDetail (RFC 7807).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!--
+            OAuth2 Resource Server
+            =======================
+            Configura o user-service como Resource Server OAuth2:
+              - Valida o JWT recebido no header Authorization: Bearer <token>
+              - Extrai claims (roles, subject) do token
+              - Habilita @PreAuthorize("hasRole('ADMIN')") nos controllers
+
+            O user-service NÃO emite tokens — isso é responsabilidade do Keycloak.
+            Ele apenas confia nos tokens que o api-gateway já validou e repassa.
+
+            A chave pública para verificar a assinatura é obtida via JWKS endpoint
+            do Keycloak configurado em application.yml (issuer-uri).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!--
+            Flyway Core
+            ============
+            Gerencia migrations de banco de dados com versionamento:
+              V1__create_users_table.sql → cria a tabela
+              V2__add_index_email.sql    → adiciona índice (exemplo futuro)
+
+            Flyway roda automaticamente no startup da aplicação, ANTES do
+            Hibernate validar o schema (ddl-auto: validate).
+
+            Garante que o banco está sempre no estado correto sem intervenção manual.
+            Em produção, nunca use ddl-auto: create ou update — só validate.
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
+        <!--
+            Flyway — suporte ao PostgreSQL 15+
+            ====================================
+            A partir do Flyway 10.x (incluído no Spring Boot 3.3+), o suporte a
+            bancos específicos foi extraído em módulos separados. flyway-core sozinho
+            reconhece apenas o "core" de bancos; PostgreSQL 15+ precisa deste módulo.
+            Sem ele: BeanCreationException "Unsupported Database: PostgreSQL 16.x".
+
+            A versão é gerenciada pelo BOM do Spring Boot — não repetimos aqui.
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <!--
+            Driver PostgreSQL
+            =================
+            Driver JDBC do PostgreSQL. Necessário em runtime para o HikariCP
+            abrir conexões. scope=runtime: não é usado em tempo de compilação,
+            mas deve estar no classpath quando a aplicação roda.
+        -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+            MapStruct
+            ==========
+            Gera implementações de mapper em tempo de compilação.
+            Converte User (entidade JPA) ↔ UserResponse (DTO) sem reflexão.
+
+            Por que não usar BeanUtils.copyProperties ou ModelMapper?
+              - MapStruct é verificado em tempo de compilação (erro se campo não existe)
+              - Zero overhead em runtime (código gerado é equivalente a copiar campo a campo)
+              - Totalmente type-safe
+
+            A versão é herdada do parent POM via ${mapstruct.version}.
+        -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!-- TESTES ============================================================ -->
+
+        <!--
+            Testcontainers PostgreSQL
+            ==========================
+            Sobe um container PostgreSQL real durante os testes de integração.
+            Elimina a necessidade de banco em memória (H2) que tem comportamento
+            diferente do PostgreSQL real (tipos, funções, constraints).
+
+            Com @ServiceConnection do Spring Boot 3.1+, o Testcontainers configura
+            automaticamente a datasource — sem hardcode de URL/porta.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            Spring Boot Testcontainers
+            ===========================
+            Integração oficial Spring Boot + Testcontainers.
+            Habilita @ServiceConnection: o Spring Boot descobre automaticamente
+            a URL/porta do container e configura a datasource sem properties manuais.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            Spring Security Test
+            =====================
+            Fornece utilitários para testar endpoints protegidos por OAuth2/JWT:
+              @WithMockUser(roles = "ADMIN")
+                Injeta um Principal autenticado no SecurityContext sem rodar o
+                fluxo OAuth2 completo. Os testes de integração não precisam de
+                um Keycloak real rodando — o contexto de segurança é simulado.
+
+              SecurityMockMvcConfigurer (via @AutoConfigureMockMvc)
+                Integra o SecurityFilterChain ao MockMvc — sem isso, as chamadas
+                do MockMvc pulam a cadeia de filtros de segurança.
+
+            scope=test: não vai para o JAR de produção.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Maven Compiler Plugin — processadores de anotação
+                ==================================================
+                Lombok e MapStruct são annotation processors: geram código Java
+                em tempo de compilação. Precisam ser declarados explicitamente
+                aqui para o Maven (o IDE geralmente configura isso automaticamente).
+
+                ORDEM IMPORTA: Lombok deve vir antes do MapStruct.
+                Motivo: MapStruct lê os métodos gerados pelo Lombok (getters/setters).
+                Se MapStruct rodar primeiro, os getters ainda não existem → erro de compilação.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <!-- Versão explícita: annotationProcessorPaths não herda do
+                                 dependencyManagement automaticamente em todos os cenários.
+                                 Deve ser consistente com ${lombok.version} do parent. -->
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        POM PAI (Parent POM / Aggregator POM)
+        ======================================
+        Em um monorepo com múltiplos serviços Maven, o Parent POM resolve dois problemas:
+
+        1. AGREGADOR: lista os módulos filhos para que `mvn package` na raiz
+           compile todos de uma vez (em paralelo com -T 1C).
+
+        2. CENTRALIZAÇÃO DE VERSÕES: define as versões de dependências e plugins
+           UMA VEZ aqui. Os filhos herdam sem repetir versão. Isso evita o problema
+           de user-service usar Spring Boot 3.4.3 e auth-service usar 3.4.1 por engano.
+
+        Hierarquia:
+            spring-boot-starter-parent  (BOM oficial do Spring Boot)
+                └── backend-parent      (este arquivo)
+                        ├── api-gateway
+                        ├── auth-service
+                        ├── user-service
+                        └── stream-service
+    -->
+
+    <groupId>com.study</groupId>
+    <artifactId>backend-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+
+    <!--
+        packaging = pom: indica que este projeto não gera JAR nem WAR.
+        Ele é apenas um "contêiner" de configuração para os filhos.
+    -->
+    <packaging>pom</packaging>
+    <name>backend-parent</name>
+
+    <!--
+        MÓDULOS
+        ========
+        Cada <module> aponta para uma subpasta relativa a este pom.xml.
+        O Maven resolve a ordem de build automaticamente baseado nas dependências
+        entre módulos (dependency graph). Se api-gateway depende de user-service,
+        Maven garante que user-service é compilado primeiro.
+    -->
+    <modules>
+        <!-- Adicionar módulos conforme cada serviço for implementado -->
+        <module>user-service</module>
+    </modules>
+
+    <!--
+        PARENT: spring-boot-starter-parent
+        ====================================
+        Herdar do starter-parent do Spring Boot nos dá gratuitamente:
+          - Versões gerenciadas de centenas de dependências (o BOM do Spring Boot)
+          - Configuração do maven-compiler-plugin apontando para <java.version>
+          - Configuração do maven-surefire-plugin para JUnit 5
+          - Filtro de resources (application.yml pode usar @placeholder@)
+          - Encoding UTF-8 em todos os plugins
+
+        relativePath vazio: Maven busca no repositório central, não localmente.
+        Isso é o correto para dependências externas.
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.4</version>
+        <relativePath/>
+    </parent>
+
+    <!--
+        PROPERTIES: variáveis reutilizáveis em todo o POM
+        ===================================================
+        Convenção Maven: propriedades em kebab-case ou com ponto.
+        O spring-boot-starter-parent lê <java.version> para configurar
+        o compilador automaticamente — não precisa configurar o plugin manualmente.
+    -->
+    <properties>
+        <!-- Java 25: LTS lançado em setembro/2025. Traz ZGC generacional estável,
+             virtual threads maduros e melhorias de performance de JVM. -->
+        <java.version>25</java.version>
+
+        <!-- Spring Cloud 2024.0.x (codinome "Leyton") é o release train
+             compatível com Spring Boot 3.4.x. Release trains do Spring Cloud
+             seguem o calendário do Spring Boot — nunca misture versões incompatíveis.
+             Consulte: https://spring.io/projects/spring-cloud#overview -->
+        <spring-cloud.version>2024.0.1</spring-cloud.version>
+
+        <!-- MapStruct: gerador de código para mapeamento entre objetos (DTO ↔ Entity).
+             Gera o código em tempo de compilação — zero reflection em runtime. -->
+        <mapstruct.version>1.6.3</mapstruct.version>
+
+        <!-- Lombok: sobrescrevemos a versão gerenciada pelo Spring Boot BOM.
+             Razão: Lombok 1.18.36 (versão do Spring Boot 3.4.x) acessa internals do
+             javac que foram removidos no Java 25 (TypeTag.UNKNOWN). Resultado:
+             ExceptionInInitializerError no annotation processor e build quebrado.
+             1.18.38+ adicionou suporte ao Java 25 adaptando-se às mudanças de API.
+             Regra: ao mudar java.version, verificar também compatibilidade do Lombok. -->
+        <lombok.version>1.18.38</lombok.version>
+
+        <!-- Testcontainers: sobe containers Docker reais durante os testes.
+             Permite testar contra PostgreSQL, Kafka, Redis reais em vez de mocks.
+             O BOM (Bill of Materials) garante que todos os módulos do Testcontainers
+             (postgresql, kafka, etc.) usem a mesma versão. -->
+        <testcontainers.version>1.21.1</testcontainers.version>
+    </properties>
+
+    <!--
+        DEPENDENCY MANAGEMENT
+        ======================
+        Define versões SEM adicionar dependências aos módulos filhos.
+        É o equivalente ao BOM (Bill of Materials) pattern.
+
+        Diferença crítica:
+          <dependencyManagement> → controla versão, filho ESCOLHE se usa
+          <dependencies>         → filho herda OBRIGATORIAMENTE
+
+        Use <dependencyManagement> para BOMs externos que trazem dezenas
+        de dependências de uma vez (Spring Cloud, Testcontainers).
+    -->
+    <dependencyManagement>
+        <dependencies>
+
+            <!--
+                Spring Cloud BOM
+                Importar como "pom" com scope "import" é o padrão para BOMs.
+                Isso registra as versões de todas as dependências do Spring Cloud
+                (Gateway, Circuit Breaker, Config, etc.) sem forçar seu uso.
+            -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!--
+                docker-java BOM
+                Sobrescreve a versão do docker-java trazida pelo Testcontainers BOM.
+                Razão: docker-java 3.4.0 usa API version 1.41 hardcoded para todos os
+                requests (ex: GET /v1.41/_ping). Docker Desktop 29.x exige mínimo 1.44 —
+                requests com versão < 1.44 recebem HTTP 400 e o Testcontainers falha.
+                docker-java 3.4.1 bumpeou o default para 1.44.
+                Regra: ao atualizar docker.desktop, verificar compatibilidade do docker-java.
+            -->
+            <dependency>
+                <groupId>com.github.docker-java</groupId>
+                <artifactId>docker-java-bom</artifactId>
+                <version>3.4.1</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!--
+                Testcontainers BOM
+                Sem isso, cada módulo precisaria especificar a versão de
+                testcontainers:postgresql, testcontainers:kafka, etc. individualmente,
+                com risco de versões inconsistentes.
+            -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
+
+    <!--
+        DEPENDENCIES: herdadas por TODOS os módulos filhos
+        ====================================================
+        Coloque aqui apenas o que é genuinamente universal.
+        Se só user-service usa JPA, a dep JPA vai no pom.xml do user-service.
+    -->
+    <dependencies>
+
+        <!--
+            Spring Boot Actuator
+            Expõe endpoints HTTP de operação:
+              /actuator/health     → liveness e readiness probes do Kubernetes
+              /actuator/metrics    → métricas internas
+              /actuator/metrics    → métricas em formato JSON (inspeção local)
+            Todo serviço precisa disso para funcionar corretamente no K8s.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!--
+            Micrometer Tracing — Bridge OpenTelemetry
+            ==========================================
+            Micrometer Tracing é a API de tracing do Spring Boot (desde 3.0).
+            Ela é agnóstica ao backend — o código da aplicação usa apenas
+            a API do Micrometer, e a implementação é plugável.
+
+            Este artefato conecta a API Micrometer ao SDK do OpenTelemetry.
+            É o "bridge" entre os dois mundos.
+
+            Fluxo:
+              Código da app → Micrometer Tracing API
+                              → micrometer-tracing-bridge-otel
+                                → OpenTelemetry SDK
+                                  → opentelemetry-exporter-otlp
+                                    → OTel Collector → Jaeger
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+
+        <!--
+            OpenTelemetry OTLP Exporter
+            ============================
+            Serializa os spans em formato OTLP (OpenTelemetry Protocol) e os
+            envia via HTTP (porta 4318) ou gRPC (porta 4317) para o OTel Collector.
+            O OTel Collector então roteia para o Jaeger.
+
+            OTLP é o protocolo padrão da CNCF para telemetria — substitui
+            os formatos proprietários como o Zipkin B3 e o Jaeger Thrift.
+        -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+
+        <!--
+            Micrometer Registry OTLP
+            =========================
+            Exporta métricas via OTLP (OpenTelemetry Protocol) ao OTel Collector.
+            Consistente com a decisão de usar OTLP como protocolo único de telemetria
+            (traces + métricas pelo mesmo canal, sem Prometheus no stack).
+
+            Configuração em application.yml:
+              management.otlp.metrics.export.url: ${OTEL_ENDPOINT}/v1/metrics
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+
+        <!--
+            Lombok
+            =======
+            Gera código boilerplate em tempo de compilação via annotation processing:
+              @Data           → getters, setters, equals, hashCode, toString
+              @Builder        → builder pattern
+              @RequiredArgsConstructor → construtor com campos final (injeção via construtor)
+              @Slf4j          → campo log estático (sem new Logger(...))
+
+            optional=true: Lombok não é transitivo — quem depende deste módulo
+            não herda o Lombok (correto, pois é só para compilação).
+        -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!--
+            Spring Boot Test
+            =================
+            Traz para os testes:
+              - JUnit 5 (Jupiter)
+              - Mockito
+              - AssertJ
+              - @SpringBootTest (sobe contexto completo)
+              - MockMvc / WebTestClient
+            scope=test: não vai para o JAR de produção.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            Testcontainers JUnit 5
+            =======================
+            Integração entre Testcontainers e JUnit 5.
+            Permite usar @Testcontainers e @Container nas classes de teste.
+            O container sobe antes do primeiro teste e desce depois do último.
+            Os módulos específicos (postgresql, kafka) ficam nos POMs filhos.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <!--
+                Spring Boot Maven Plugin
+                =========================
+                Responsável por criar o "fat JAR" (uber JAR) executável:
+                empacota o JAR da aplicação + todas as dependências + servidor
+                embutido (Tomcat/Netty) em um único arquivo .jar autocontido.
+
+                Isso é o que permite rodar `java -jar app.jar` sem instalar
+                nada além do JRE no servidor/container.
+
+                A exclusão do Lombok evita que ele entre no JAR final
+                (ele só é necessário em tempo de compilação).
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!--
+                Maven Surefire — executor de testes unitários e de integração
+                ================================================================
+                Surefire inclui por padrão apenas: *Test.java, *Tests.java, *TestCase.java
+                Testes de integração nomeados *IT.java são excluídos por convenção Maven
+                (o Failsafe plugin roda os *IT.java em fase separada, pós-package).
+
+                Para este projeto de estudo: incluímos *IT.java no Surefire por simplicidade.
+                Benefício: `mvn test` roda tudo de uma vez (Testcontainers sobe no test phase).
+                Trade-off: em projetos maiores, separar IT de unit tests permite executar
+                apenas testes rápidos no loop de desenvolvimento (`mvn test -DexcludeIT=true`).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*IT.java</include>
+                        <include>**/*TestCase.java</include>
+                    </includes>
+                    <!--
+                        Variáveis de ambiente para o processo JVM filho (forked JVM).
+                        Surefire faz fork do processo — env vars do shell NÃO são herdadas
+                        automaticamente de forma confiável em todos os sistemas operacionais.
+                        Declarar explicitamente garante comportamento consistente.
+
+                        DOCKER_API_VERSION:
+                          Docker Desktop 29.x exige mínimo API version 1.44.
+                          docker-java (usado pelo Testcontainers 1.21.0) usa 1.41 por padrão.
+                          APIs < 1.44 recebem HTTP 400 com resposta vazia — o Testcontainers
+                          interpreta isso como "Docker não disponível" e aborta os testes.
+                          Solução: forçar 1.44 via env var que o docker-java lê explicitamente.
+
+                        DOCKER_HOST:
+                          Aponta para o endpoint TCP exposto pelo Docker Desktop.
+                          Necessário porque o docker-java lê o Docker Context (desktop-linux)
+                          do ~/.docker/config.json e tenta o named pipe, que também retorna
+                          400 para versões < 1.44. TCP contorna esse problema.
+                    -->
+                    <!--
+                        argLine: flags JVM passados ao processo filho do Surefire.
+                        -Ddocker.version=1.44:
+                          Propriedade Java lida pelo docker-java (DefaultDockerClientConfig).
+                          Força o cliente a enviar requests com API versão 1.44 em vez do
+                          padrão 1.41. Docker Desktop 29.x rejeita versões < 1.44 com HTTP 400.
+                    -->
+                    <environmentVariables>
+                        <DOCKER_HOST>tcp://localhost:2375</DOCKER_HOST>
+                        <!--
+                            Docker Desktop 29.x exige mínimo API version 1.44.
+                            docker-java usa 1.41 como padrão — requests /v1.41/... recebem HTTP 400.
+                            Forçar 1.44 aqui faz o docker-java enviar /v1.44/... que o Docker aceita.
+                        -->
+                        <DOCKER_API_VERSION>1.44</DOCKER_API_VERSION>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
+
+            <!--
+                JaCoCo — Java Code Coverage
+                =============================
+                Instrumenta o bytecode para medir quais linhas são executadas
+                durante os testes. Gera relatório XML que o SonarQube consome
+                para calcular a métrica de cobertura de testes.
+
+                prepare-agent: adiciona o agente JaCoCo ao processo de testes
+                report: gera o XML após a fase test
+
+                O Quality Gate do SonarQube pode rejeitar o build se cobertura < X%.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
+                OWASP Dependency-Check
+                =======================
+                Consulta o banco de dados NVD (National Vulnerability Database)
+                e verifica se alguma dependência do projeto tem CVEs conhecidos.
+
+                failBuildOnCVSS=7: falha o build se qualquer CVE tiver score >= 7.0
+                (escala 0-10; 7+ = High, 9+ = Critical).
+
+                suppressionFiles: lista CVEs aceitos pelo time (com justificativa).
+                Usado quando um CVE não é explorável no contexto do projeto.
+
+                Rodado no pipeline CI como gate de segurança antes do build Docker.
+            -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>10.0.4</version>
+                <configuration>
+                    <format>HTML</format>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <suppressionFiles>
+                        <suppressionFile>../owasp-suppressions.xml</suppressionFile>
+                    </suppressionFiles>
+                </configuration>
+            </plugin>
+
+            <!--
+                SpotBugs — Análise Estática
+                ============================
+                Analisa o bytecode (não o código-fonte) em busca de padrões
+                conhecidos de bugs: null pointer dereference, thread safety issues,
+                vulnerabilidades de segurança (com o plugin FindSecBugs).
+
+                effort=Max: análise mais profunda (mais lenta, mais precisa)
+                threshold=Medium: reporta bugs de severidade média ou maior
+            -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>4.8.7</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Medium</threshold>
+                </configuration>
+            </plugin>
+
+        </plugins>
+    </build>
+
+</project>
