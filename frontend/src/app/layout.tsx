@@ -1,15 +1,25 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import ThemeRegistry from '@/components/ThemeRegistry';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "Study App",
-  description: "Monorepo de estudo — CI/CD, segurança e escalabilidade",
+  title:       'ProjectSaaS — Gestão de Projetos',
+  description: 'Plataforma moderna de gestão de projetos e equipes.',
+  manifest:    '/manifest.json',
+};
+
+export const viewport: Viewport = {
+  width:        'device-width',
+  initialScale: 1,
+  themeColor:   '#6366f1',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <ThemeRegistry>{children}</ThemeRegistry>
+      </body>
     </html>
   );
 }

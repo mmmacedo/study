@@ -20,6 +20,11 @@ const nextConfig: NextConfig = {
         source: "/api/auth/:path*",
         destination: "http://localhost:8080/auth/:path*",
       },
+      // Proxy user-service via api-gateway (evita CORS do browser → :8080)
+      {
+        source: "/api/users/:path*",
+        destination: "http://localhost:8080/api/users/:path*",
+      },
     ];
   },
 };
