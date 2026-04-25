@@ -75,7 +75,7 @@ def login(driver, username: str, password: str) -> None:
     """
     Executa o fluxo completo de login via Keycloak:
       1. Abre a landing page do frontend
-      2. Clica em "Entrar com Keycloak"
+      2. Aguarda o redirect automático para o Keycloak (sem clique manual)
       3. Preenche as credenciais na tela de login nativa do Keycloak
       4. Aguarda o redirecionamento de volta ao dashboard
 
@@ -83,10 +83,8 @@ def login(driver, username: str, password: str) -> None:
     padrão gerados pelo tema Keycloak — estáveis entre versões minor.
     """
     driver.get(BASE_URL)
-    driver.find_element(By.CSS_SELECTOR, '[data-testid="login-button"]').click()
-
-    # Aguarda o form de login do Keycloak — espera explícita porque o Keycloak
-    # pode redirecionar rapidamente se ainda houver sessão SSO residual.
+    # A landing page inicia o fluxo PKCE e redireciona automaticamente ao Keycloak.
+    WebDriverWait(driver, 15).until(EC.url_contains("8180"))
     WebDriverWait(driver, 15).until(
         EC.presence_of_element_located((By.ID, "username"))
     )

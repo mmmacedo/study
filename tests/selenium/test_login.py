@@ -25,21 +25,22 @@ KEYCLOAK_AUTH_URL = "http://localhost:8180/realms/study/protocol/openid-connect/
 
 
 class TestLoginPage:
-    """Testa o estado inicial da aplicação (sem autenticação)."""
+    """Testa o comportamento da landing page sem autenticação."""
 
-    def test_01_login_page_loads(self, driver):
-        """A landing page carrega e exibe o botão de login."""
+    def test_01_landing_redirects_to_keycloak(self, driver):
+        """A landing page redireciona automaticamente para o Keycloak."""
         driver.get(BASE_URL)
-        btn = driver.find_element(By.CSS_SELECTOR, '[data-testid="login-button"]')
-        assert btn.is_displayed()
-        assert "Keycloak" in btn.text
-
-    def test_02_login_redirects_to_keycloak(self, driver):
-        """Clicar em 'Entrar' redireciona para a tela de login do Keycloak."""
-        driver.get(BASE_URL)
-        driver.find_element(By.CSS_SELECTOR, '[data-testid="login-button"]').click()
         wait_for_url(driver, "8180")
         assert "8180" in driver.current_url
+
+    def test_02_keycloak_login_form_is_shown(self, driver):
+        """Após o redirect automático, o form de login do Keycloak é exibido."""
+        driver.get(BASE_URL)
+        wait_for_url(driver, "8180")
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.ID, "username"))
+        )
+        assert driver.find_element(By.ID, "username").is_displayed()
 
 
 class TestLoginFlow:
@@ -60,18 +61,13 @@ class TestLoginFlow:
         el = driver.find_element(By.CSS_SELECTOR, '[data-testid="roles-display"]')
         assert "USER" in el.text
 
-    def test_06_logout_returns_to_home(self, driver):
-        """Clicar em 'Sair' limpa a sessão e retorna à landing page."""
+    def test_06_logout_clears_session(self, driver):
+        """Clicar em 'Sair' encerra a sessão — home redireciona ao Keycloak novamente."""
         driver.find_element(By.CSS_SELECTOR, '[data-testid="logout-button"]').click()
-        # Keycloak end_session redirect pode demorar (vai a :8180 e volta a :3000)
-        wait_for_url(driver, "localhost:3000", timeout=30)
-        # Botão de login visível novamente confirma que a sessão foi encerrada
-        btn = WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, '[data-testid="login-button"]')
-            )
-        )
-        assert btn.is_displayed()
+        # end_session redireciona para :3000; home auto-redireciona para :8180 (sem token).
+        # Aguardamos diretamente o destino final para evitar race condition no flash de :3000.
+        wait_for_url(driver, "8180", timeout=45)
+        assert "8180" in driver.current_url
 
 
 class TestAdminLogin:
@@ -83,15 +79,9 @@ class TestAdminLogin:
         el = driver.find_element(By.CSS_SELECTOR, '[data-testid="roles-display"]')
         assert "ADMIN" in el.text
         # Faz logout para não poluir testes subsequentes.
-        # Mesmo padrão do test_06: wait_for_url separa o tempo do redirect Keycloak
-        # do tempo de render do botão — evita timeout quando o redirect demora ~25s.
         driver.find_element(By.CSS_SELECTOR, '[data-testid="logout-button"]').click()
-        wait_for_url(driver, "localhost:3000", timeout=30)
-        WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, '[data-testid="login-button"]')
-            )
-        )
+        wait_for_url(driver, "8180", timeout=45)
+        assert "8180" in driver.current_url
 
 
 class TestLoginFailure:
