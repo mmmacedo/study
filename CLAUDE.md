@@ -155,10 +155,10 @@ Browser/Cliente
 Next.js 15 sem biblioteca OAuth — usa Web Crypto API nativa (mais educativo, zero dependências extras).
 
 ```
-:3000/            clica "Entrar com Keycloak"
+:3000/            mount → useEffect detecta ausência de token
   → gera code_verifier + code_challenge (PKCE, Web Crypto)
   → salva code_verifier no sessionStorage
-  → redireciona para :8180?code_challenge=...&client_id=study-api
+  → redireciona automaticamente para :8180?code_challenge=...&client_id=study-api
       preenche usuário/senha no form nativo do Keycloak
   → :3000/callback?code=...
       POST ao Keycloak: code + code_verifier → access_token + refresh_token + id_token
@@ -505,6 +505,40 @@ EC.presence_of_element_located((By.CSS_SELECTOR, "[id^='input-error'], .alert-er
 - Exceções padronizadas com RFC 7807 Problem Details (`ProblemDetail` do Spring 6).
 - Mensageria sempre via abstração Spring Cloud Stream — nunca importar APIs de broker diretamente.
 - Métricas exportadas via OTLP (`micrometer-registry-otlp`) — sem Prometheus no stack.
+
+### Desenvolvimento Frontend — PWA, Mobile First e SPA
+
+#### SPA (Single Page Application)
+
+O frontend é uma SPA completa: não há recarregamento de página entre rotas.
+
+- Navegação via `router.push()` e `<Link>` do Next.js — nunca `window.location.href` dentro do app (exceto redirects externos como o Keycloak).
+- Componentes interativos marcados com `"use client"`. Componentes puramente de exibição sem estado podem ser Server Components.
+- Lazy loading com `next/dynamic` para componentes pesados (ex: gráficos, editores).
+- Auth guard em `useEffect` no lado cliente (padrão atual). Para produção, migrar para `middleware.ts` com validação JWT server-side.
+- Nunca usar Server Actions para fluxos que envolvam `sessionStorage` ou Web Crypto — essas APIs só existem no browser.
+
+#### Mobile First
+
+Todo componente novo parte do menor viewport (320px) e escala para cima via `min-width`.
+
+- Usar os breakpoints do MUI v6 com a direção **mobile-first**: `sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }}`.
+- Tamanho mínimo de área clicável: **48×48px** (Material Design) — nenhum botão, ícone ou link deve ser menor.
+- Evitar interações exclusivas de hover (``:hover`` sem equivalente `:focus-visible` ou `onClick` mobile).
+- Testar no Chrome DevTools com perfis: iPhone SE (375px), Pixel 7 (412px) e tablet (768px).
+- `<meta name="viewport" content="width=device-width, initial-scale=1">` obrigatório no `<head>` (já presente via Next.js `Metadata`).
+- Larguras em `%`, `vw` ou props MUI (`width: '100%'`) — nunca pixels fixos em containers de layout.
+
+#### PWA (Progressive Web App)
+
+O app deve ser instalável e funcional offline para as rotas estáticas.
+
+- **`public/manifest.json`** obrigatório com os campos: `name`, `short_name`, `start_url: "/"`, `display: "standalone"`, `theme_color`, `background_color` e `icons` (192×192 e 512×512 — o ícone 512 com `"purpose": "maskable"` é obrigatório para instalar no Android).
+- **`<link rel="manifest">`** e **`<meta name="theme-color">`** no `<head>` global (`app/layout.tsx`).
+- **Service Worker** via `next-pwa` (wrapper sobre Workbox): adicionar ao `package.json` e configurar em `next.config.ts`. Estratégia padrão: `NetworkFirst` para rotas de API, `CacheFirst` para assets estáticos.
+- O SW **não deve cachear** as chamadas ao Keycloak (`:8180`) nem ao api-gateway (`:8080`) — tokens mudam a cada sessão.
+- HTTPS é pré-requisito para SW em produção (já satisfeito pelo ingress TLS no K8s). Em desenvolvimento, `localhost` é exceção tratada pelos browsers.
+- Checklist Lighthouse PWA deve passar antes de qualquer merge para `main`.
 
 ### Entidades JPA — campos obrigatórios
 
