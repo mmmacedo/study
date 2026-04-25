@@ -13,6 +13,20 @@ function authHeaders(): HeadersInit {
   };
 }
 
+// res.json() throws "Unexpected end of JSON input" when the body is empty
+// (e.g. 401/403 from the gateway with no payload). Parse safely.
+async function safeJson(res: Response): Promise<ApiError> {
+  const text = await res.text();
+  if (!text.trim()) {
+    return { type: '', title: 'Erro', status: res.status, detail: `HTTP ${res.status}` };
+  }
+  try {
+    return JSON.parse(text) as ApiError;
+  } catch {
+    return { type: '', title: 'Erro', status: res.status, detail: text };
+  }
+}
+
 export function useUsers() {
   const [users,   setUsers]   = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +58,7 @@ export function useUsers() {
       await fetchUsers();
       return undefined;
     }
-    return (await res.json()) as ApiError;
+    return safeJson(res);
   }
 
   async function deactivateUser(id: string): Promise<ApiError | undefined> {
@@ -56,7 +70,7 @@ export function useUsers() {
       setUsers((prev) => prev.filter((u) => u.id !== id));
       return undefined;
     }
-    return (await res.json()) as ApiError;
+    return safeJson(res);
   }
 
   return { users, loading, error, refetch: fetchUsers, createUser, deactivateUser };
