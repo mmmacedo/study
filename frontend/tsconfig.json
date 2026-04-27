@@ -1,21 +1,73 @@
 {
   "compilerOptions": {
+    // Compila para ES2017 (async/await nativo). Next.js faz o polyfill para browsers
+    // mais antigos via SWC/Babel — o target aqui afeta apenas a saída do tsc (typecheck).
     "target": "ES2017",
+
+    // APIs de runtime disponíveis: DOM (browser), iterable helpers e o
+    // conjunto mais recente de built-ins ECMAScript (esnext).
     "lib": ["dom", "dom.iterable", "esnext"],
+
+    // Permite importar arquivos .js dentro do projeto TypeScript.
+    // Útil para libs sem tipos ou arquivos de config em JS puro.
     "allowJs": true,
+
+    // Não verifica tipos dentro de node_modules. Bibliotecas com tipos
+    // mal-formados causariam erros que não são responsabilidade do projeto.
     "skipLibCheck": true,
+
+    // Ativa todas as verificações rígidas em bloco:
+    // noImplicitAny, strictNullChecks, strictFunctionTypes, etc.
     "strict": true,
+
+    // Não gera arquivos .js — o Next.js usa SWC para compilar, não o tsc.
+    // O tsc é usado apenas para checagem de tipos (typecheck / pre-commit).
     "noEmit": true,
+
+    // Compatibilidade com módulos CommonJS que exportam via module.exports:
+    // permite importar como `import fs from 'fs'` em vez de `import * as fs`.
     "esModuleInterop": true,
+
+    // Formato de módulo usado nas importações estáticas. "esnext" preserva
+    // import/export para que o bundler (Webpack/Turbopack do Next.js) faça tree-shaking.
     "module": "esnext",
+
+    // "bundler" é o modo correto para projetos com Webpack/Vite/Turbopack:
+    // resolve extensões e package.json exports como um bundler real faria,
+    // sem exigir extensões explícitas nas importações.
     "moduleResolution": "bundler",
+
+    // Permite importar arquivos .json com tipagem automática: as chaves
+    // do objeto JSON viram tipos inferidos.
     "resolveJsonModule": true,
+
+    // Garante que cada arquivo pode ser transpilado isoladamente (sem contexto
+    // de outros arquivos). Obrigatório para SWC/esbuild e evita re-exports de tipos
+    // que quebram a compilação incremental.
     "isolatedModules": true,
+
+    // Preserva JSX como está no output do tsc — quem transforma o JSX é o
+    // SWC do Next.js, não o TypeScript.
     "jsx": "preserve",
+
+    // Compilação incremental: salva metadados em tsconfig.tsbuildinfo para
+    // reutilizar na próxima execução do tsc e reduzir o tempo de typecheck.
     "incremental": true,
+
+    // Plugin do Language Server do Next.js para o VS Code: oferece
+    // autocompletar de rotas, Server Components, metadata, etc.
     "plugins": [{ "name": "next" }],
+
+    // Alias de importação: @/* mapeia para src/* — evita caminhos relativos
+    // longos como ../../components e facilita mover arquivos sem atualizar imports.
     "paths": { "@/*": ["./src/*"] }
   },
+
+  // Arquivos incluídos na checagem de tipos.
+  // next-env.d.ts é gerado pelo Next.js e declara tipos globais (Image, Link, etc.).
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+
+  // node_modules são excluídos: tipos de libs vêm via skipLibCheck e
+  // as declarações em @types/ — não é necessário checá-los diretamente.
   "exclude": ["node_modules"]
 }
