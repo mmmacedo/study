@@ -1,6 +1,9 @@
 package com.study.user.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.study.user.dto.CreateUserRequest;
+import com.study.user.event.UserCreatedEvent;
+import com.study.user.event.UserDeactivatedEvent;
 import com.study.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,48 +12,33 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.cloud.stream.binder.test.OutputDestination;
+import org.springframework.cloud.stream.binder.test.TestChannelBinderConfiguration;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.Message;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.hamcrest.Matchers.*;
 
 /**
  * Teste de integração do UserController.
  *
- * @SpringBootTest: sobe o contexto completo do Spring Boot — todos os beans,
- *   configurações, filtros de segurança, conversor JSON. Testa o comportamento
- *   real da aplicação, não mocks isolados.
- *
- * @AutoConfigureMockMvc: configura o MockMvc sem iniciar um servidor HTTP real.
- *   MockMvc chama os controllers diretamente na JVM — mais rápido que servidor real,
- *   mas cobre toda a camada web (serialização, validação, segurança, handlers).
- *
- * @Testcontainers + @Container:
- *   Sobe um PostgreSQL Docker real antes dos testes e derruba ao final.
- *   Por que não H2 em memória?
- *     - H2 tem dialeto SQL diferente do PostgreSQL (tipos, funções, constraints)
- *     - Testa exatamente o que vai rodar em produção
- *     - Flyway roda as migrations reais no container
- *
- * @ServiceConnection:
- *   Spring Boot 3.1+: detecta automaticamente que é um PostgreSQLContainer
- *   e configura spring.datasource.url/username/password sem properties manuais.
- *   Elimina o padrão antigo de @DynamicPropertySource.
- *
- * @WithMockUser:
- *   Injeta um usuário autenticado no SecurityContext sem rodar o fluxo OAuth2.
- *   roles={"ADMIN"} simula um token com role ADMIN para endpoints protegidos.
+ * @Import(TestChannelBinderConfiguration.class):
+ *   Substitui o Kafka binder por um binder em memória.
+ *   OutputDestination.receive("user-created") lê mensagens publicadas via StreamBridge
+ *   sem precisar de Kafka real — os testes ficam mais rápidos e sem dependência externa.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
+@Import(TestChannelBinderConfiguration.class)
 class UserControllerIT {
 
     @Container
@@ -66,9 +54,14 @@ class UserControllerIT {
     @Autowired
     UserRepository userRepository;
 
+    @Autowired
+    OutputDestination outputDestination;
+
     @BeforeEach
     void setUp() {
         userRepository.deleteAll();
+        // Drena mensagens residuais de testes anteriores para isolar cada teste
+        outputDestination.clear();
     }
 
     @Test
@@ -85,6 +78,57 @@ class UserControllerIT {
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.email").value("joao@example.com"))
                 .andExpect(jsonPath("$.active").value(true));
+    }
+
+    @Test
+    @DisplayName("POST /api/users → publica UserCreatedEvent no tópico user-created")
+    @WithMockUser(roles = "ADMIN")
+    void create_publishesUserCreatedEvent() throws Exception {
+        var request = new CreateUserRequest("João Silva", "joao@example.com");
+
+        String body = mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        String userId = objectMapper.readTree(body).get("id").asText();
+
+        Message<byte[]> msg = outputDestination.receive(1000, "user-created");
+        assertThat(msg).isNotNull();
+
+        UserCreatedEvent event = objectMapper.readValue(msg.getPayload(), UserCreatedEvent.class);
+        assertThat(event.userId()).hasToString(userId);
+        assertThat(event.email()).isEqualTo("joao@example.com");
+        assertThat(event.role()).isEqualTo("USER");
+    }
+
+    @Test
+    @DisplayName("DELETE /api/users/{id} → publica UserDeactivatedEvent no tópico user-deactivated")
+    @WithMockUser(roles = "ADMIN")
+    void deactivate_publishesUserDeactivatedEvent() throws Exception {
+        var request = new CreateUserRequest("Maria", "maria@example.com");
+
+        String createBody = mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        String userId = objectMapper.readTree(createBody).get("id").asText();
+
+        // Drena o UserCreatedEvent para isolar o assert do delete
+        outputDestination.receive(1000, "user-created");
+
+        mockMvc.perform(delete("/api/users/" + userId))
+                .andExpect(status().isNoContent());
+
+        Message<byte[]> msg = outputDestination.receive(1000, "user-deactivated");
+        assertThat(msg).isNotNull();
+
+        UserDeactivatedEvent event = objectMapper.readValue(msg.getPayload(), UserDeactivatedEvent.class);
+        assertThat(event.userId()).hasToString(userId);
+        assertThat(event.email()).isEqualTo("maria@example.com");
     }
 
     @Test

@@ -30,6 +30,39 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 
+  cloud:
+    function:
+      # Declara quais beans Consumer<> o Spring Cloud Stream deve gerenciar.
+      # Separados por ";" quando há múltiplos consumers.
+      definition: userCreated;userDeactivated
+    stream:
+      bindings:
+        userCreated-in-0:
+          destination: user-created
+          group: auth-service
+        userDeactivated-in-0:
+          destination: user-deactivated
+          group: auth-service
+      kafka:
+        binder:
+          brokers: ${KAFKA_URL:localhost:9092}
+        bindings:
+          userCreated-in-0:
+            consumer:
+              # Retry com backoff exponencial antes de enviar para DLQ
+              max-attempts: 3
+              back-off-initial-interval: 1000
+              back-off-multiplier: 2.0
+              enable-dlq: true
+              dlq-name: user-created.dlq
+          userDeactivated-in-0:
+            consumer:
+              max-attempts: 3
+              back-off-initial-interval: 1000
+              back-off-multiplier: 2.0
+              enable-dlq: true
+              dlq-name: user-deactivated.dlq
+
   security:
     oauth2:
       resourceserver:
@@ -54,6 +87,9 @@ keycloak:
   base-url: ${KEYCLOAK_URL:http://localhost:8180}
   realm: study
   client-id: study-api
+  admin:
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:auth-admin-client}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:auth-admin-secret}
 
 # =============================================================================
 # Actuator — endpoints de operação

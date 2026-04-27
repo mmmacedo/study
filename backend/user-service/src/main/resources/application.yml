@@ -51,9 +51,20 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    # baseline-on-migrate: true permite rodar Flyway em banco que já tem dados
-    # (útil na primeira execução quando o banco foi criado manualmente)
     baseline-on-migrate: true
+
+  cloud:
+    stream:
+      # StreamBridge usa os bindings declarados aqui para rotear ao tópico Kafka.
+      # Convenção: <nome>-out-<índice> para saída (producer).
+      bindings:
+        user-created-out-0:
+          destination: user-created
+        user-deactivated-out-0:
+          destination: user-deactivated
+      kafka:
+        binder:
+          brokers: ${KAFKA_URL:localhost:9092}
 
   security:
     oauth2:
@@ -133,6 +144,4 @@ spring:
     activate:
       on-profile: docker
   datasource:
-    # "postgres" resolve para o container do PostgreSQL na rede Docker interna.
-    # Localmente seria "localhost" — daí a necessidade do profile.
     url: jdbc:postgresql://postgres:5432/user_db

@@ -161,6 +161,32 @@
             <version>${mapstruct.version}</version>
         </dependency>
 
+        <!--
+            Spring Cloud Stream — Kafka Binder
+            ====================================
+            Abstrai a publicação de eventos sobre o ciclo de vida do usuário.
+            O código nunca importa classes Kafka diretamente — usa StreamBridge
+            e as interfaces funcionais do Spring Cloud Stream.
+            A versão é gerenciada pelo BOM spring-cloud no parent POM.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-stream-kafka</artifactId>
+            <exclusions>
+                <!--
+                    spring-cloud-starter-stream-kafka traz micrometer-tracing-bridge-brave
+                    transitivamente. O parent POM já inclui micrometer-tracing-bridge-otel.
+                    Com dois bridges no classpath, o Spring não consegue resolver qual
+                    Propagator usar → UnsatisfiedDependencyException no contexto de teste.
+                    Excluímos o Brave para manter apenas o OTel (stack adotada no projeto).
+                -->
+                <exclusion>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- TESTES ============================================================ -->
 
         <!--
@@ -190,6 +216,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-testcontainers</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!--
+            Spring Cloud Stream — Test Binder
+            ===================================
+            Binder em memória para testes de integração: sem Kafka real, sem
+            Testcontainers para broker. Permite verificar que o serviço publicou
+            os eventos corretos via OutputDestination/InputDestination.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream-test-binder</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <!-- O test-binder inclui bridge-brave; já temos bridge-otel do parent. -->
+                <exclusion>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!--

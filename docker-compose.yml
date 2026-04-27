@@ -142,6 +142,42 @@ services:
       start_period: 5s
 
   # ===========================================================================
+  # Kafka (KRaft) — broker de mensageria sem Zookeeper
+  #
+  # KRaft (Kafka Raft): modo nativo do Kafka 3.x onde o próprio broker gerencia
+  # o metadado de cluster — elimina a dependência do Zookeeper.
+  #
+  # Dois listeners para dois contextos de acesso:
+  #   PLAINTEXT://kafka:29092  → comunicação interna (containers na mesma rede Docker)
+  #   EXTERNAL://localhost:9092 → acesso do host (testes, ferramentas locais)
+  #
+  # KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true: tópicos criados automaticamente
+  # na primeira publicação — conveniente em desenvolvimento.
+  # Em produção: false + criação explícita com replicação e partições adequadas.
+  # ===========================================================================
+  kafka:
+    image: bitnami/kafka:3.9
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ===========================================================================
   # user-service — CRUD de usuários (Spring MVC + JPA + Flyway)
   # ===========================================================================
   user-service:
@@ -160,10 +196,8 @@ services:
       # O Docker Compose cria uma rede interna onde cada serviço é resolvível
       # pelo seu nome — "postgres" resolve para o IP do container PostgreSQL.
       SPRING_PROFILES_ACTIVE: docker
-      # "keycloak" resolve para o container do Keycloak na rede Docker interna.
-      # Sem isso, o user-service tenta http://localhost:8180 de dentro do container
-      # (que não existe) e falha silenciosamente ao validar JWTs — retornando 401.
       KEYCLOAK_URL: http://keycloak:8180
+      KAFKA_URL: kafka:29092
 
       # SPRING_DATASOURCE_USERNAME e SPRING_DATASOURCE_PASSWORD usam os
       # defaults definidos no application.yml (postgres/postgres) — não é
@@ -182,11 +216,8 @@ services:
 
     depends_on:
       postgres:
-        # condition: service_healthy garante que o Spring Boot só inicia após
-        # o PostgreSQL estar pronto para aceitar conexões.
-        # Sem isso: Spring tenta conectar, falha com "Connection refused",
-        # e o container encerra com erro — mesmo com restart: on-failure,
-        # isso gera logs confusos e atrasa o startup.
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
     healthcheck:
@@ -211,15 +242,16 @@ services:
 
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      # "keycloak" resolve para o container do Keycloak na rede Docker interna.
-      # O auth-service delega token/refresh/logout ao Keycloak via RestClient.
       KEYCLOAK_URL: http://keycloak:8180
+      KAFKA_URL: kafka:29092
 
     ports:
       - "8081:8081"
 
     depends_on:
       postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
     healthcheck:

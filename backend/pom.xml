@@ -373,13 +373,17 @@
                           Força o cliente a enviar requests com API versão 1.44 em vez do
                           padrão 1.41. Docker Desktop 29.x rejeita versões < 1.44 com HTTP 400.
                     -->
+                    <!--
+                        argLine: flags JVM passadas ao processo filho (forked JVM do Surefire).
+                        ${argLine}: reservado pelo JaCoCo prepare-agent — sempre prefixar com ${argLine}
+                          para não sobrescrever o agente de cobertura.
+                        -XX:+EnableDynamicAgentLoading: necessário para Mockito inline-mock-maker
+                          no Java 21+ / 25. Sem essa flag, Mockito não consegue mockar classes
+                          concretas (não-interface) e lança MockitoException em tempo de teste.
+                    -->
+                    <argLine>${argLine} -XX:+EnableDynamicAgentLoading</argLine>
                     <environmentVariables>
                         <DOCKER_HOST>tcp://localhost:2375</DOCKER_HOST>
-                        <!--
-                            Docker Desktop 29.x exige mínimo API version 1.44.
-                            docker-java usa 1.41 como padrão — requests /v1.41/... recebem HTTP 400.
-                            Forçar 1.44 aqui faz o docker-java enviar /v1.44/... que o Docker aceita.
-                        -->
                         <DOCKER_API_VERSION>1.44</DOCKER_API_VERSION>
                     </environmentVariables>
                 </configuration>

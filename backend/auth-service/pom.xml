@@ -117,6 +117,24 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            Spring Cloud Stream — Kafka Binder
+            ====================================
+            Consome eventos de UserCreated e UserDeactivated publicados pelo
+            user-service. Consumer<> beans processados pelo binder sem importar
+            classes Kafka diretamente.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-stream-kafka</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- TESTES ============================================================ -->
 
         <!--
@@ -143,6 +161,24 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-testcontainers</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!--
+            Spring Cloud Stream — Test Binder
+            ===================================
+            Binder em memória para testes: injeta mensagens via InputDestination
+            sem precisar de Kafka real.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream-test-binder</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!--

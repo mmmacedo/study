@@ -2,8 +2,11 @@ package com.study.user.service;
 
 import com.study.user.dto.CreateUserRequest;
 import com.study.user.dto.UserResponse;
+import com.study.user.event.UserCreatedEvent;
+import com.study.user.event.UserDeactivatedEvent;
 import com.study.user.exception.DuplicateEmailException;
 import com.study.user.exception.UserNotFoundException;
+import com.study.user.messaging.UserEventPublisher;
 import com.study.user.model.User;
 import com.study.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +47,7 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UserEventPublisher eventPublisher;
 
     /**
      * Lista todos os usuários.
@@ -103,6 +107,15 @@ public class UserService {
 
         User saved = userRepository.save(user);
         log.info("Usuário criado id={}", saved.getId());
+
+        eventPublisher.publishCreated(new UserCreatedEvent(
+                saved.getId(),
+                saved.getName(),
+                saved.getEmail(),
+                saved.getRole().name(),
+                "Change1234!"
+        ));
+
         return toResponse(saved);
     }
 
@@ -118,8 +131,9 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(id));
         user.deactivate();
-        // Não precisa chamar save() — o Hibernate detecta a mudança automaticamente
-        // ao fim da transação (dirty checking) e gera o UPDATE.
+        // Não precisa chamar save() — dirty checking do Hibernate gera o UPDATE.
+
+        eventPublisher.publishDeactivated(new UserDeactivatedEvent(user.getId(), user.getEmail()));
     }
 
     // =========================================================================

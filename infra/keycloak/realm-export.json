@@ -43,6 +43,24 @@
 
       "redirectUris": ["*"],
       "webOrigins": ["*"]
+    },
+    {
+      "clientId": "auth-admin-client",
+      "name": "auth-admin-client",
+      "description": "Client confidencial usado pelo auth-service para gerenciar usuários via Admin API",
+      "enabled": true,
+      "protocol": "openid-connect",
+
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+
+      "secret": "auth-admin-secret",
+
+      "redirectUris": [],
+      "webOrigins": []
     }
   ],
 
@@ -78,6 +96,15 @@
         }
       ],
       "realmRoles": ["USER", "ADMIN"]
+    },
+    {
+      "username": "service-account-auth-admin-client",
+      "enabled": true,
+      "email": "service-account-auth-admin-client@placeholder.org",
+      "serviceAccountClientId": "auth-admin-client",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users"]
+      }
     }
   ]
 }
