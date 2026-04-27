@@ -301,6 +301,38 @@ services:
       # Gateway é rápido de subir (sem Flyway, sem JPA) — 20s é suficiente
       start_period: 20s
 
+  # ===========================================================================
+  # stream-service — SSE bridge Kafka → HTTP (Spring WebFlux + Spring Cloud Stream)
+  # ===========================================================================
+  stream-service:
+    build:
+      context: backend
+      dockerfile: stream-service/Dockerfile
+
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      KAFKA_URL: kafka:29092
+      KEYCLOAK_URL: http://keycloak:8180
+      OTEL_ENDPOINT: http://otel-collector:4318
+
+    ports:
+      # Exposto para testes diretos via curl com text/event-stream.
+      # Em produção todo tráfego passa pelo api-gateway (:8080/stream/**).
+      - "8083:8083"
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # WebFlux sobe mais rápido que MVC (sem Flyway/JPA) — 20s é suficiente
+      start_period: 20s
+
+
 # =============================================================================
 # Volumes nomeados
 # =============================================================================

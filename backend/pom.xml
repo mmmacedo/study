@@ -45,10 +45,10 @@
         Maven garante que user-service é compilado primeiro.
     -->
     <modules>
-        <!-- Adicionar módulos conforme cada serviço for implementado -->
         <module>user-service</module>
         <module>api-gateway</module>
         <module>auth-service</module>
+        <module>stream-service</module>
     </modules>
 
     <!--

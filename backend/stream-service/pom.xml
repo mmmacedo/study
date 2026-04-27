@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        POM DO MÓDULO: stream-service
+        ==============================
+        Herda tudo do parent POM:
+          - Spring Boot 3.4.4
+          - Java 25
+          - Actuator, OTEL tracing, OTLP metrics, Lombok, Test, Testcontainers JUnit5
+
+        Este POM só declara o que é ESPECÍFICO do stream-service:
+          - WebFlux (reativo, Netty) em vez de Web (MVC, Tomcat)
+          - Spring Cloud Stream + Kafka Binder (abstração de broker)
+          - reactor-test (StepVerifier para testar Flux/Mono)
+          - spring-cloud-stream-test-binder (binder em memória para testes)
+          - SEM banco de dados — stream-service é stateless (apenas retransmite eventos)
+    -->
+    <parent>
+        <groupId>com.study</groupId>
+        <artifactId>backend-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>stream-service</artifactId>
+    <name>stream-service</name>
+
+    <dependencies>
+
+        <!--
+            Spring WebFlux
+            ===============
+            Servidor reativo baseado em Netty (event loop, não thread-per-request).
+            Necessário para SSE (Server-Sent Events): um cliente SSE mantém a conexão
+            aberta indefinidamente — com Tomcat isso bloquearia uma thread por cliente.
+            Com Netty, a conexão SSE é gerenciada por um handler assíncrono no event loop
+            sem bloquear threads.
+
+            WebFlux usa:
+              Mono<T>  → resposta assíncrona de 0 ou 1 elemento
+              Flux<T>  → stream assíncrono de 0..N elementos (ideal para SSE)
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!--
+            OAuth2 Resource Server (WebFlux)
+            =================================
+            Versão reativa do Resource Server: valida o JWT no header Authorization
+            sem bloquear threads. Usa ReactiveJwtDecoder (não JwtDecoder do MVC).
+            Configurado em SecurityConfig com ServerHttpSecurity (não HttpSecurity).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!--
+            Spring Cloud Stream — Kafka Binder
+            ====================================
+            Abstração de broker: o código usa Consumer<T> (java.util.function) puro.
+            O binder Kafka traduz tópicos Kafka em invocações dessas funções.
+            Troca de broker = trocar o binder + configuração, sem mudar código Java.
+
+            Exclusão obrigatória de micrometer-tracing-bridge-brave:
+              spring-cloud-starter-stream-kafka traz o Brave (Zipkin) como dependência
+              transitiva do spring-cloud-sleuth. O projeto usa OTel (bridge-otel), não Brave.
+              Ter ambos no classpath causa conflito de instrumentação de tracing —
+              spans duplicados ou erros de inicialização.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-stream-kafka</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- TESTES ============================================================ -->
+
+        <!--
+            Reactor Test — StepVerifier
+            ============================
+            Ferramenta para testar streams reativos (Flux/Mono) de forma síncrona.
+            StepVerifier.create(flux).assertNext(...).verifyComplete() bloqueia
+            a thread de teste até o stream completar ou timeout estourar.
+            Sem isso, o teste terminaria antes do Flux emitir qualquer evento.
+        -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            Spring Cloud Stream — Test Binder
+            ===================================
+            Binder em memória substituto do Kafka para testes de integração.
+            Permite injetar mensagens via InputDestination e capturar saídas via
+            OutputDestination sem precisar de um Kafka real (sem Testcontainers).
+            Isso torna os testes de integração mais rápidos e sem dependência de Docker.
+
+            Exclusão obrigatória (mesma razão do binder de produção):
+              Brave conflita com OTel — causa erro de inicialização do contexto Spring.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream-test-binder</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-tracing-bridge-brave</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!--
+            Spring Security Test
+            =====================
+            SecurityMockServerConfigurers.mockJwt() para WebFlux:
+            injeta um JWT mockado no WebTestClient sem precisar do Keycloak real.
+            Essencial para testar endpoints protegidos em testes de integração.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Maven Compiler Plugin — processador de anotação Lombok
+                =========================================================
+                stream-service usa apenas Lombok (sem MapStruct — sem mapeamentos
+                complexos DTO↔Entity; o serviço é stateless e não tem banco).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

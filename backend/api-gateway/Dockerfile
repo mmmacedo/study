@@ -35,6 +35,7 @@ COPY api-gateway/pom.xml api-gateway/
 # "Child module /build/user-service does not exist".
 COPY user-service/pom.xml user-service/
 COPY auth-service/pom.xml auth-service/
+COPY stream-service/pom.xml stream-service/
 
 # Pré-baixa apenas as deps do módulo api-gateway e seus pais.
 # dependency:resolve em vez de dependency:go-offline: baixa apenas as
