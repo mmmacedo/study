@@ -12,9 +12,9 @@
  * (ex: Next.js route handlers ou NextAuth.js).
  */
 
-const ACCESS_KEY  = "access_token";
-const REFRESH_KEY = "refresh_token";
-const ID_KEY      = "id_token";
+const ACCESS_KEY = 'access_token';
+const REFRESH_KEY = 'refresh_token';
+const ID_KEY = 'id_token';
 
 export function saveTokens(access: string, refresh: string, id?: string): void {
   sessionStorage.setItem(ACCESS_KEY, access);

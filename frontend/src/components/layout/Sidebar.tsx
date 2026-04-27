@@ -19,11 +19,11 @@ import BoltIcon from '@mui/icons-material/Bolt';
 
 export const SIDEBAR_WIDTH = 240;
 
-const SIDEBAR_BG    = '#0f172a';
-const ACTIVE_BG     = 'rgba(99,102,241,0.18)';
+const SIDEBAR_BG = '#0f172a';
+const ACTIVE_BG = 'rgba(99,102,241,0.18)';
 const ACTIVE_BORDER = '#6366f1';
-const TEXT_DIM      = 'rgba(255,255,255,0.55)';
-const TEXT_ACTIVE   = '#ffffff';
+const TEXT_DIM = 'rgba(255,255,255,0.55)';
+const TEXT_ACTIVE = '#ffffff';
 
 interface NavItem {
   label: string;
@@ -34,16 +34,21 @@ interface NavItem {
 
 const primaryNav: NavItem[] = [
   { label: 'Dashboard', icon: <DashboardIcon fontSize="small" />, href: '/dashboard' },
-  { label: 'Usuários',  icon: <PeopleIcon   fontSize="small" />, href: '/users' },
+  { label: 'Usuários', icon: <PeopleIcon fontSize="small" />, href: '/users' },
 ];
 
 const comingSoonNav: NavItem[] = [
-  { label: 'Projetos',   icon: <FolderIcon    fontSize="small" />, href: '/projects',  soon: true },
-  { label: 'Relatórios', icon: <BarChartIcon  fontSize="small" />, href: '/reports',   soon: true },
+  { label: 'Projetos', icon: <FolderIcon fontSize="small" />, href: '/projects', soon: true },
+  { label: 'Relatórios', icon: <BarChartIcon fontSize="small" />, href: '/reports', soon: true },
 ];
 
 const bottomNav: NavItem[] = [
-  { label: 'Configurações', icon: <SettingsIcon fontSize="small" />, href: '/settings', soon: true },
+  {
+    label: 'Configurações',
+    icon: <SettingsIcon fontSize="small" />,
+    href: '/settings',
+    soon: true,
+  },
 ];
 
 function NavRow({ item, active }: { item: NavItem; active: boolean }) {
@@ -174,7 +179,9 @@ export default function Sidebar() {
           >
             ProjectSaaS
           </Typography>
-          <Typography sx={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.35)', lineHeight: 1 }}>
+          <Typography
+            sx={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.35)', lineHeight: 1 }}
+          >
             Gestão de Projetos
           </Typography>
         </Box>

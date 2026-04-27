@@ -42,7 +42,15 @@ import type { CreateUserPayload, ApiError, User } from '@/types/user';
 
 /* ── helpers ── */
 
-const AVATAR_PALETTE = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444'];
+const AVATAR_PALETTE = [
+  '#6366f1',
+  '#ec4899',
+  '#f59e0b',
+  '#10b981',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ef4444',
+];
 
 function avatarColor(name: string): string {
   return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
@@ -50,9 +58,9 @@ function avatarColor(name: string): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-BR', {
-    day:   '2-digit',
+    day: '2-digit',
     month: 'short',
-    year:  'numeric',
+    year: 'numeric',
   });
 }
 
@@ -72,7 +80,12 @@ function StatCard({ icon, label, value, color, loading }: StatCardProps) {
       <CardContent sx={{ p: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Box>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              fontWeight={600}
+              sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}
+            >
               {label}
             </Typography>
             <Typography variant="h4" fontWeight={700} sx={{ mt: 0.5, lineHeight: 1 }}>
@@ -81,11 +94,14 @@ function StatCard({ icon, label, value, color, loading }: StatCardProps) {
           </Box>
           <Box
             sx={{
-              width: 46, height: 46,
+              width: 46,
+              height: 46,
               borderRadius: '12px',
               bgcolor: `${color}1A`,
               color,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             {icon}
@@ -99,27 +115,38 @@ function StatCard({ icon, label, value, color, loading }: StatCardProps) {
 /* ── create user dialog ── */
 
 interface CreateDialogProps {
-  open:     boolean;
-  onClose:  () => void;
+  open: boolean;
+  onClose: () => void;
   onCreate: (payload: CreateUserPayload) => Promise<ApiError | undefined>;
 }
 
 function CreateUserDialog({ open, onClose, onCreate }: CreateDialogProps) {
-  const [name,     setName]     = useState('');
-  const [email,    setEmail]    = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [fieldErr, setFieldErr] = useState<Record<string, string>>({});
-  const [apiErr,   setApiErr]   = useState('');
-  const [busy,     setBusy]     = useState(false);
+  const [apiErr, setApiErr] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  function reset() { setName(''); setEmail(''); setFieldErr({}); setApiErr(''); }
-  function handleClose() { reset(); onClose(); }
+  function reset() {
+    setName('');
+    setEmail('');
+    setFieldErr({});
+    setApiErr('');
+  }
+  function handleClose() {
+    reset();
+    onClose();
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!name.trim() || name.trim().length < 2) errs.name = 'Nome deve ter pelo menos 2 caracteres';
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email inválido';
-    if (Object.keys(errs).length) { setFieldErr(errs); return; }
+    if (Object.keys(errs).length) {
+      setFieldErr(errs);
+      return;
+    }
 
     setBusy(true);
     setFieldErr({});
@@ -142,7 +169,11 @@ function CreateUserDialog({ open, onClose, onCreate }: CreateDialogProps) {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Preencha os dados para criar um novo usuário. O perfil padrão é USER.
           </Typography>
-          {apiErr && <Alert severity="error" sx={{ mb: 2 }}>{apiErr}</Alert>}
+          {apiErr && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {apiErr}
+            </Alert>
+          )}
           <TextField
             label="Nome completo"
             fullWidth
@@ -186,8 +217,8 @@ function CreateUserDialog({ open, onClose, onCreate }: CreateDialogProps) {
 /* ── confirm deactivate dialog ── */
 
 interface ConfirmDialogProps {
-  user:      User | null;
-  onClose:   () => void;
+  user: User | null;
+  onClose: () => void;
   onConfirm: () => Promise<void>;
 }
 
@@ -210,7 +241,9 @@ function ConfirmDeactivateDialog({ user, onClose, onConfirm }: ConfirmDialogProp
         </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-        <Button onClick={onClose} disabled={busy} color="inherit">Cancelar</Button>
+        <Button onClick={onClose} disabled={busy} color="inherit">
+          Cancelar
+        </Button>
         <Button variant="contained" color="error" disabled={busy} onClick={handleConfirm}>
           {busy ? 'Desativando…' : 'Desativar'}
         </Button>
@@ -226,12 +259,25 @@ function TableSkeleton() {
     <>
       {Array.from({ length: 5 }).map((_, i) => (
         <TableRow key={i}>
-          <TableCell><Skeleton variant="circular" width={36} height={36} /></TableCell>
-          <TableCell><Skeleton width={160} /><Skeleton width={120} height={14} /></TableCell>
-          <TableCell><Skeleton width={60} height={24} variant="rounded" /></TableCell>
-          <TableCell><Skeleton width={60} height={24} variant="rounded" /></TableCell>
-          <TableCell><Skeleton width={80} /></TableCell>
-          <TableCell><Skeleton variant="circular" width={32} height={32} /></TableCell>
+          <TableCell>
+            <Skeleton variant="circular" width={36} height={36} />
+          </TableCell>
+          <TableCell>
+            <Skeleton width={160} />
+            <Skeleton width={120} height={14} />
+          </TableCell>
+          <TableCell>
+            <Skeleton width={60} height={24} variant="rounded" />
+          </TableCell>
+          <TableCell>
+            <Skeleton width={60} height={24} variant="rounded" />
+          </TableCell>
+          <TableCell>
+            <Skeleton width={80} />
+          </TableCell>
+          <TableCell>
+            <Skeleton variant="circular" width={32} height={32} />
+          </TableCell>
         </TableRow>
       ))}
     </>
@@ -242,12 +288,13 @@ function TableSkeleton() {
 
 export default function UsersPage() {
   const router = useRouter();
-  const { users, loading, error, authError, clearAuthError, createUser, deactivateUser } = useUsers();
+  const { users, loading, error, authError, clearAuthError, createUser, deactivateUser } =
+    useUsers();
 
-  const [createOpen,  setCreateOpen]  = useState(false);
-  const [targetUser,  setTargetUser]  = useState<User | null>(null);
-  const [search,      setSearch]      = useState('');
-  const [page,        setPage]        = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [targetUser, setTargetUser] = useState<User | null>(null);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const rowsPerPage = 10;
   const [snack, setSnack] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -264,10 +311,11 @@ export default function UsersPage() {
   }, [authError, clearAuthError, router]);
 
   const filtered = useMemo(
-    () => users.filter((u) => {
-      const q = search.toLowerCase();
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    }),
+    () =>
+      users.filter((u) => {
+        const q = search.toLowerCase();
+        return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+      }),
     [users, search],
   );
 
@@ -275,7 +323,7 @@ export default function UsersPage() {
 
   const stats = useMemo(
     () => ({
-      total:  users.length,
+      total: users.length,
       active: users.filter((u) => u.active).length,
       admins: users.filter((u) => u.role === 'ADMIN').length,
     }),
@@ -315,18 +363,30 @@ export default function UsersPage() {
       setSnack({ msg: 'Permissão insuficiente. Esta ação requer role ADMIN.', ok: false });
       return;
     }
-    setSnack(err
-      ? { msg: err.detail ?? 'Erro ao desativar usuário.', ok: false }
-      : { msg: `Usuário ${targetUser.name} foi desativado.`, ok: true },
+    setSnack(
+      err
+        ? { msg: err.detail ?? 'Erro ao desativar usuário.', ok: false }
+        : { msg: `Usuário ${targetUser.name} foi desativado.`, ok: true },
     );
   }
 
   return (
     <AppLayout>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: { sm: 'center' }, justifyContent: 'space-between', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 3 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: { sm: 'center' },
+          justifyContent: 'space-between',
+          flexDirection: { xs: 'column', sm: 'row' },
+          gap: 2,
+          mb: 3,
+        }}
+      >
         <Box>
-          <Typography variant="h5" fontWeight={700}>Usuários</Typography>
+          <Typography variant="h5" fontWeight={700}>
+            Usuários
+          </Typography>
           <Typography variant="body2" color="text.secondary">
             Gerencie os usuários do sistema
           </Typography>
@@ -344,13 +404,31 @@ export default function UsersPage() {
       {/* Stats */}
       <Grid container spacing={2} sx={{ mb: 3 }} component="div">
         <Grid item xs={12} sm={4}>
-          <StatCard icon={<PeopleIcon />}              label="Total"   value={stats.total}  color="#6366f1" loading={loading} />
+          <StatCard
+            icon={<PeopleIcon />}
+            label="Total"
+            value={stats.total}
+            color="#6366f1"
+            loading={loading}
+          />
         </Grid>
         <Grid item xs={12} sm={4}>
-          <StatCard icon={<CheckCircleIcon />}         label="Ativos"  value={stats.active} color="#22c55e" loading={loading} />
+          <StatCard
+            icon={<CheckCircleIcon />}
+            label="Ativos"
+            value={stats.active}
+            color="#22c55e"
+            loading={loading}
+          />
         </Grid>
         <Grid item xs={12} sm={4}>
-          <StatCard icon={<AdminPanelSettingsIcon />}  label="Admins"  value={stats.admins} color="#f59e0b" loading={loading} />
+          <StatCard
+            icon={<AdminPanelSettingsIcon />}
+            label="Admins"
+            value={stats.admins}
+            color="#f59e0b"
+            loading={loading}
+          />
         </Grid>
       </Grid>
 
@@ -361,7 +439,10 @@ export default function UsersPage() {
           <TextField
             placeholder="Buscar por nome ou email…"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -374,7 +455,9 @@ export default function UsersPage() {
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>
+          <Alert severity="error" sx={{ m: 2 }}>
+            {error}
+          </Alert>
         )}
 
         <TableContainer>
@@ -398,7 +481,9 @@ export default function UsersPage() {
                     <Box sx={{ py: 6, textAlign: 'center' }}>
                       <PeopleIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
                       <Typography color="text.secondary">
-                        {search ? 'Nenhum usuário encontrado para esta busca.' : 'Nenhum usuário cadastrado ainda.'}
+                        {search
+                          ? 'Nenhum usuário encontrado para esta busca.'
+                          : 'Nenhum usuário cadastrado ainda.'}
                       </Typography>
                     </Box>
                   </TableCell>
@@ -410,7 +495,8 @@ export default function UsersPage() {
                     <TableCell sx={{ py: 1.5 }}>
                       <Avatar
                         sx={{
-                          width: 36, height: 36,
+                          width: 36,
+                          height: 36,
                           bgcolor: avatarColor(u.name),
                           fontSize: '0.8125rem',
                           fontWeight: 700,
@@ -422,8 +508,12 @@ export default function UsersPage() {
 
                     {/* Name + Email */}
                     <TableCell>
-                      <Typography variant="body2" fontWeight={600}>{u.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{u.email}</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {u.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {u.email}
+                      </Typography>
                     </TableCell>
 
                     {/* Role */}

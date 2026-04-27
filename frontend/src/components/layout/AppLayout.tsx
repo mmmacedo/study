@@ -56,9 +56,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Navbar onToggleSidebar={() => setMobileOpen(true)} />
 
         {/* Offset for fixed AppBar: 56px mobile / 64px desktop */}
-        <Box sx={{ flex: 1, pt: { xs: 7, sm: 8 }, px: { xs: 2, sm: 3 }, pb: 4 }}>
-          {children}
-        </Box>
+        <Box sx={{ flex: 1, pt: { xs: 7, sm: 8 }, px: { xs: 2, sm: 3 }, pb: 4 }}>{children}</Box>
       </Box>
     </Box>
   );

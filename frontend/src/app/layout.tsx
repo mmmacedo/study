@@ -3,15 +3,15 @@ import ThemeRegistry from '@/components/ThemeRegistry';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title:       'ProjectSaaS — Gestão de Projetos',
+  title: 'ProjectSaaS — Gestão de Projetos',
   description: 'Plataforma moderna de gestão de projetos e equipes.',
-  manifest:    '/manifest.json',
+  manifest: '/manifest.json',
 };
 
 export const viewport: Viewport = {
-  width:        'device-width',
+  width: 'device-width',
   initialScale: 1,
-  themeColor:   '#6366f1',
+  themeColor: '#6366f1',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

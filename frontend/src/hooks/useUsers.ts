@@ -19,9 +19,11 @@ async function safeJson(res: Response): Promise<ApiError> {
   const text = await res.text();
   if (!text.trim()) {
     const detail =
-      res.status === 401 ? 'Sessão expirada. Você será redirecionado para o login.' :
-      res.status === 403 ? 'Permissão insuficiente. Esta ação requer role ADMIN.' :
-      `Erro inesperado (HTTP ${res.status}).`;
+      res.status === 401
+        ? 'Sessão expirada. Você será redirecionado para o login.'
+        : res.status === 403
+          ? 'Permissão insuficiente. Esta ação requer role ADMIN.'
+          : `Erro inesperado (HTTP ${res.status}).`;
     return { type: '', title: 'Erro', status: res.status, detail };
   }
   try {
@@ -32,9 +34,9 @@ async function safeJson(res: Response): Promise<ApiError> {
 }
 
 export function useUsers() {
-  const [users,     setUsers]     = useState<User[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<'expired' | 'forbidden' | null>(null);
 
   const clearAuthError = () => setAuthError(null);
@@ -44,8 +46,14 @@ export function useUsers() {
     setError(null);
     try {
       const res = await fetch(BASE, { headers: authHeaders() });
-      if (res.status === 401) { setAuthError('expired');   return; }
-      if (res.status === 403) { setAuthError('forbidden'); return; }
+      if (res.status === 401) {
+        setAuthError('expired');
+        return;
+      }
+      if (res.status === 403) {
+        setAuthError('forbidden');
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setUsers(await res.json());
     } catch (err) {
@@ -55,7 +63,9 @@ export function useUsers() {
     }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   async function createUser(payload: CreateUserPayload): Promise<ApiError | undefined> {
     const res = await fetch(BASE, {
@@ -82,5 +92,14 @@ export function useUsers() {
     return safeJson(res);
   }
 
-  return { users, loading, error, authError, clearAuthError, refetch: fetchUsers, createUser, deactivateUser };
+  return {
+    users,
+    loading,
+    error,
+    authError,
+    clearAuthError,
+    refetch: fetchUsers,
+    createUser,
+    deactivateUser,
+  };
 }

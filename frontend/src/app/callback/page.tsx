@@ -41,12 +41,12 @@ function FullPageCenter({ children }: { children: React.ReactNode }) {
  *   6. Erro → exibe Alert (data-testid="callback-error")
  */
 function CallbackHandler() {
-  const router       = useRouter();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const code     = searchParams.get('code');
+    const code = searchParams.get('code');
     const verifier = sessionStorage.getItem('pkce_verifier');
 
     if (!code || !verifier) {
@@ -57,17 +57,17 @@ function CallbackHandler() {
     sessionStorage.removeItem('pkce_verifier');
 
     const body = new URLSearchParams({
-      grant_type:    'authorization_code',
-      client_id:     CLIENT_ID,
-      redirect_uri:  REDIRECT_URI,
+      grant_type: 'authorization_code',
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
       code,
       code_verifier: verifier,
     });
 
     fetch(TOKEN_URL, {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    body.toString(),
+      body: body.toString(),
     })
       .then((res) => {
         if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`);
@@ -106,7 +106,9 @@ function CallbackHandler() {
     <FullPageCenter>
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
         <CircularProgress size={36} />
-        <Typography color="text.secondary" variant="body2">Autenticando…</Typography>
+        <Typography color="text.secondary" variant="body2">
+          Autenticando…
+        </Typography>
       </Box>
     </FullPageCenter>
   );

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Lint + format: somente arquivos staged no frontend
+npx lint-staged --cwd frontend
+
+# Type-check: todo o codebase (erros de tipo podem aparecer em arquivos não staged)
+(cd frontend && npx tsc --noEmit)

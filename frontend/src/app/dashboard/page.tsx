@@ -25,10 +25,10 @@ import { clearTokens, getAccessToken, getIdToken, getRefreshToken } from '@/lib/
 import { CLIENT_ID, END_SESSION_URL, INTROSPECT_URL, LOGOUT_ENDPOINT } from '@/lib/config';
 
 interface UserInfo {
-  sub:               string;
+  sub: string;
   preferredUsername: string;
-  roles:             string[];
-  exp:               number;
+  roles: string[];
+  exp: number;
 }
 
 /*
@@ -37,13 +37,16 @@ interface UserInfo {
  */
 export default function DashboardPage() {
   const router = useRouter();
-  const [user,    setUser]    = useState<UserInfo | null>(null);
-  const [error,   setError]   = useState<string | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) { router.push('/'); return; }
+    if (!token) {
+      router.push('/');
+      return;
+    }
 
     fetch(INTROSPECT_URL, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
@@ -51,7 +54,9 @@ export default function DashboardPage() {
         return res.json() as Promise<UserInfo>;
       })
       .then(setUser)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Erro ao carregar perfil.'))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Erro ao carregar perfil.'),
+      )
       .finally(() => setLoading(false));
   }, [router]);
 
@@ -59,8 +64,11 @@ export default function DashboardPage() {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
       fetch(LOGOUT_ENDPOINT, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAccessToken()}` },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getAccessToken()}`,
+        },
         body: JSON.stringify({ refresh_token: refreshToken }),
       }).catch(() => {});
     }
@@ -97,8 +105,10 @@ export default function DashboardPage() {
           '&::after': {
             content: '""',
             position: 'absolute',
-            top: -40, right: -40,
-            width: 180, height: 180,
+            top: -40,
+            right: -40,
+            width: 180,
+            height: 180,
             borderRadius: '50%',
             bgcolor: 'rgba(255,255,255,0.08)',
           },
@@ -106,8 +116,18 @@ export default function DashboardPage() {
       >
         {loading ? (
           <>
-            <Skeleton variant="text" width={220} height={36} sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} />
-            <Skeleton variant="text" width={160} height={20} sx={{ bgcolor: 'rgba(255,255,255,0.15)', mt: 0.5 }} />
+            <Skeleton
+              variant="text"
+              width={220}
+              height={36}
+              sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}
+            />
+            <Skeleton
+              variant="text"
+              width={160}
+              height={20}
+              sx={{ bgcolor: 'rgba(255,255,255,0.15)', mt: 0.5 }}
+            />
           </>
         ) : (
           <>
@@ -130,35 +150,77 @@ export default function DashboardPage() {
       {/* Quick-access cards */}
       <Grid container spacing={2.5} sx={{ mb: 3 }} component="div">
         {[
-          { icon: <PeopleIcon />,     label: 'Usuários',   desc: 'Gerencie usuários do sistema', href: '/users', color: '#6366f1', active: true  },
-          { icon: <FolderIcon />,     label: 'Projetos',   desc: 'Em breve',                     href: '#',      color: '#10b981', active: false },
-          { icon: <TrendingUpIcon />, label: 'Relatórios', desc: 'Em breve',                     href: '#',      color: '#f59e0b', active: false },
+          {
+            icon: <PeopleIcon />,
+            label: 'Usuários',
+            desc: 'Gerencie usuários do sistema',
+            href: '/users',
+            color: '#6366f1',
+            active: true,
+          },
+          {
+            icon: <FolderIcon />,
+            label: 'Projetos',
+            desc: 'Em breve',
+            href: '#',
+            color: '#10b981',
+            active: false,
+          },
+          {
+            icon: <TrendingUpIcon />,
+            label: 'Relatórios',
+            desc: 'Em breve',
+            href: '#',
+            color: '#f59e0b',
+            active: false,
+          },
         ].map((item) => (
           <Grid item xs={12} sm={4} key={item.label}>
             <Card sx={{ height: '100%', opacity: item.active ? 1 : 0.55 }}>
               <CardActionArea
                 component={item.active ? Link : 'div'}
                 {...(item.active && { href: item.href })}
-                sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
+                sx={{
+                  p: 2.5,
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                }}
               >
                 <Box
                   sx={{
-                    width: 44, height: 44,
+                    width: 44,
+                    height: 44,
                     borderRadius: '12px',
                     bgcolor: `${item.color}1A`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     color: item.color,
                     mb: 1.5,
                   }}
                 >
                   {item.icon}
                 </Box>
-                <Typography variant="subtitle1" fontWeight={700}>{item.label}</Typography>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  {item.label}
+                </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
                   {item.desc}
                 </Typography>
                 {item.active && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1.5, color: item.color, fontSize: '0.8125rem', fontWeight: 600 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      mt: 1.5,
+                      color: item.color,
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                    }}
+                  >
                     Acessar <ArrowForwardIcon sx={{ fontSize: 14 }} />
                   </Box>
                 )}
@@ -172,7 +234,15 @@ export default function DashboardPage() {
       <Card sx={{ maxWidth: 520 }}>
         <CardContent sx={{ p: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.5 }}>
-            <Avatar sx={{ width: 52, height: 52, bgcolor: 'primary.main', fontSize: '1.25rem', fontWeight: 700 }}>
+            <Avatar
+              sx={{
+                width: 52,
+                height: 52,
+                bgcolor: 'primary.main',
+                fontSize: '1.25rem',
+                fontWeight: 700,
+              }}
+            >
               {user?.preferredUsername?.slice(0, 2).toUpperCase() ?? '??'}
             </Avatar>
             <Box>
@@ -201,19 +271,25 @@ export default function DashboardPage() {
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="text.secondary">Usuário</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Usuário
+              </Typography>
               <Typography variant="body2" fontWeight={600} data-testid="username-display">
                 {loading ? <Skeleton width={100} /> : user?.preferredUsername}
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="text.secondary">Perfil</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Perfil
+              </Typography>
               <Typography variant="body2" fontWeight={600} data-testid="roles-display">
                 {loading ? <Skeleton width={80} /> : user?.roles.join(', ')}
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="text.secondary">Token expira em</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Token expira em
+              </Typography>
               <Typography variant="body2" fontWeight={600} data-testid="expiry-display">
                 {loading ? <Skeleton width={130} /> : expDate}
               </Typography>

@@ -23,10 +23,10 @@ import { SIDEBAR_WIDTH } from './Sidebar';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
-  '/users':     'Usuários',
-  '/projects':  'Projetos',
-  '/reports':   'Relatórios',
-  '/settings':  'Configurações',
+  '/users': 'Usuários',
+  '/projects': 'Projetos',
+  '/reports': 'Relatórios',
+  '/settings': 'Configurações',
 };
 
 function decodeUsername(token: string): string {
@@ -52,7 +52,7 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
     if (token) setUsername(decodeUsername(token));
   }, []);
 
-  const title    = ROUTE_TITLES[pathname] ?? 'Dashboard';
+  const title = ROUTE_TITLES[pathname] ?? 'Dashboard';
   const initials = username.slice(0, 2).toUpperCase() || '??';
 
   function handleLogout() {
@@ -60,10 +60,10 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
       fetch(LOGOUT_ENDPOINT, {
-        method:  'POST',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization:  `Bearer ${getAccessToken()}`,
+          Authorization: `Bearer ${getAccessToken()}`,
         },
         body: JSON.stringify({ refresh_token: refreshToken }),
       }).catch(() => {});
@@ -83,8 +83,8 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
       position="fixed"
       elevation={0}
       sx={{
-        left:   { md: SIDEBAR_WIDTH },
-        width:  { md: `calc(100% - ${SIDEBAR_WIDTH}px)` },
+        left: { md: SIDEBAR_WIDTH },
+        width: { md: `calc(100% - ${SIDEBAR_WIDTH}px)` },
         bgcolor: 'background.paper',
         borderBottom: '1px solid',
         borderColor: 'divider',
@@ -175,8 +175,12 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
           }}
         >
           <Box sx={{ px: 2, py: 1.5 }}>
-            <Typography variant="subtitle2" fontWeight={700}>{username}</Typography>
-            <Typography variant="caption" color="text.secondary">Usuário autenticado</Typography>
+            <Typography variant="subtitle2" fontWeight={700}>
+              {username}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Usuário autenticado
+            </Typography>
           </Box>
           <Divider />
           <MenuItem sx={{ py: 1, gap: 1.5, color: 'text.secondary' }} disabled>

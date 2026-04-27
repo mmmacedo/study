@@ -29,15 +29,12 @@ export async function generateCodeVerifier(): Promise<string> {
 export async function generateCodeChallenge(verifier: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(verifier);
-  const digest = await crypto.subtle.digest("SHA-256", data);
+  const digest = await crypto.subtle.digest('SHA-256', data);
   return base64urlEncode(new Uint8Array(digest));
 }
 
 function base64urlEncode(bytes: Uint8Array): string {
   // btoa só aceita string binária; convertemos o Uint8Array para isso
-  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

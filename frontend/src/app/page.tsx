@@ -18,16 +18,16 @@ export default function HomePage() {
     }
 
     (async () => {
-      const verifier  = await generateCodeVerifier();
+      const verifier = await generateCodeVerifier();
       const challenge = await generateCodeChallenge(verifier);
       sessionStorage.setItem('pkce_verifier', verifier);
 
       const params = new URLSearchParams({
-        client_id:             CLIENT_ID,
-        redirect_uri:          REDIRECT_URI,
-        response_type:         'code',
-        scope:                 'openid profile',
-        code_challenge:        challenge,
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        response_type: 'code',
+        scope: 'openid profile',
+        code_challenge: challenge,
         code_challenge_method: 'S256',
       });
 
