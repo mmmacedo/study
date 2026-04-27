@@ -37,7 +37,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import AppLayout from '@/components/layout/AppLayout';
 import { useUsers } from '@/hooks/useUsers';
-import { getAccessToken } from '@/lib/auth';
+import { clearTokens, getAccessToken } from '@/lib/auth';
 import type { CreateUserPayload, ApiError, User } from '@/types/user';
 
 /* ── helpers ── */
@@ -242,7 +242,7 @@ function TableSkeleton() {
 
 export default function UsersPage() {
   const router = useRouter();
-  const { users, loading, error, createUser, deactivateUser } = useUsers();
+  const { users, loading, error, authError, clearAuthError, createUser, deactivateUser } = useUsers();
 
   const [createOpen,  setCreateOpen]  = useState(false);
   const [targetUser,  setTargetUser]  = useState<User | null>(null);
@@ -254,6 +254,14 @@ export default function UsersPage() {
   useEffect(() => {
     if (!getAccessToken()) router.push('/');
   }, [router]);
+
+  useEffect(() => {
+    if (authError === 'expired') {
+      clearAuthError();
+      clearTokens();
+      router.push('/');
+    }
+  }, [authError, clearAuthError, router]);
 
   const filtered = useMemo(
     () => users.filter((u) => {
@@ -279,6 +287,17 @@ export default function UsersPage() {
     if (!err) {
       setCreateOpen(false);
       setSnack({ msg: 'Usuário criado com sucesso!', ok: true });
+      return undefined;
+    }
+    if (err.status === 401) {
+      clearTokens();
+      router.push('/');
+      return err;
+    }
+    if (err.status === 403) {
+      setCreateOpen(false);
+      setSnack({ msg: 'Permissão insuficiente. Esta ação requer role ADMIN.', ok: false });
+      return err;
     }
     return err;
   }
@@ -287,6 +306,15 @@ export default function UsersPage() {
     if (!targetUser) return;
     const err = await deactivateUser(targetUser.id);
     setTargetUser(null);
+    if (err?.status === 401) {
+      clearTokens();
+      router.push('/');
+      return;
+    }
+    if (err?.status === 403) {
+      setSnack({ msg: 'Permissão insuficiente. Esta ação requer role ADMIN.', ok: false });
+      return;
+    }
     setSnack(err
       ? { msg: err.detail ?? 'Erro ao desativar usuário.', ok: false }
       : { msg: `Usuário ${targetUser.name} foi desativado.`, ok: true },
