@@ -317,18 +317,23 @@ Testcontainers) envia requests com versão 1.41 por padrão (`/v1.41/_ping`). Do
 HTTP 400 com body vazio. O `DOCKER_API_VERSION` env var **não funciona** porque o Testcontainers
 usa uma versão *shaded* (embutida) do docker-java que ignora configurações externas.
 
-### Solução: proxy Python no WSL2 (porta 2376)
+### Solução: proxy Python Windows (TCP→TCP, porta 2376→2375)
 
 O proxy reescreve `/v1.XX/` → `/v1.44/` em **todos** os chunks TCP (não só o primeiro —
 HTTP keep-alive reusa a conexão, e patches só no primeiro chunk fazem requisições subsequentes
 falharem silenciosamente).
 
-**1. Script `/tmp/docker_proxy.py` no WSL2:**
+**Pré-requisito:** habilitar "Expose daemon on tcp://localhost:2375 without TLS" em
+Docker Desktop → Settings → General. Isso expõe o daemon Docker em HTTP na porta 2375.
+
+**1. Script `C:\Users\<user>\docker_proxy_win.py`:**
 
 ```python
 import socket, threading, re
-UNIX = '/var/run/docker.sock'
-PORT = 2376
+
+LISTEN_PORT = 2376
+DOCKER_PORT = 2375
+
 def pipe(src, dst, do_patch):
     try:
         while True:
@@ -342,14 +347,16 @@ def pipe(src, dst, do_patch):
         for s in (src, dst):
             try: s.close()
             except: pass
+
 def handle(client):
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.connect(UNIX)
-    threading.Thread(target=pipe, args=(client, srv, True), daemon=True).start()
-    threading.Thread(target=pipe, args=(srv, client, False), daemon=True).start()
+    docker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    docker.connect(('127.0.0.1', DOCKER_PORT))
+    threading.Thread(target=pipe, args=(client, docker, True),  daemon=True).start()
+    threading.Thread(target=pipe, args=(docker, client, False), daemon=True).start()
+
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(('0.0.0.0', PORT))
+sock.bind(('0.0.0.0', LISTEN_PORT))
 sock.listen(50)
 while True:
     c, _ = sock.accept()
@@ -358,10 +365,13 @@ while True:
 
 **2. Iniciar o proxy (antes de `mvn test`):**
 
-```bash
-wsl bash -c "nohup python3 /tmp/docker_proxy.py > /tmp/docker_proxy.log 2>&1 &"
-# verificar que está ouvindo:
-wsl bash -c "ss -tlnp | grep 2376"
+```powershell
+# Em um terminal separado (mantém rodando):
+python C:\Users\<user>\docker_proxy_win.py
+
+# Verificar que está ouvindo e funciona:
+netstat -an | findstr "2376.*LISTEN"
+curl http://localhost:2376/v1.41/_ping   # deve retornar "OK"
 ```
 
 **3. `C:\Users\<user>\.testcontainers.properties`:**
@@ -371,7 +381,7 @@ tc.host=tcp://localhost:2376
 ```
 
 > Usar `tc.host` (não `docker.host` — propriedade errada é silenciosamente ignorada).
-> O proxy precisa ser reiniciado após reboot do WSL2 — o script fica em `/tmp/docker_proxy.py`.
+> O proxy precisa estar rodando antes de `mvn test` — não persiste entre sessões.
 
 ## Keycloak — Gotchas de Configuração
 
