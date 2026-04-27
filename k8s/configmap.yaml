@@ -1,0 +1,24 @@
+# Config não-sensível compartilhada entre todos os serviços.
+# Secrets (senhas, tokens) devem usar kind: Secret ou um vault externo — nunca aqui.
+# O mesmo ConfigMap existe em staging e production com valores diferentes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-config
+  namespace: staging
+data:
+  kafka-url: "kafka:9092"
+  keycloak-url: "http://keycloak:8180"
+  otel-endpoint: "http://otel-collector:4318"
+  tracing-sampling-probability: "1.0"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-config
+  namespace: production
+data:
+  kafka-url: "kafka:9092"
+  keycloak-url: "http://keycloak:8180"
+  otel-endpoint: "http://otel-collector:4318"
+  tracing-sampling-probability: "0.1"

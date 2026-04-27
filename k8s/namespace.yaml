@@ -1,0 +1,42 @@
+# Namespaces isolam ambientes: staging recebe deploys automáticos do pipeline,
+# production requer aprovação manual (input gate no Jenkinsfile).
+# ResourceQuota garante que um namespace não consuma todos os recursos do cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    environment: staging
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: staging-quota
+  namespace: staging
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 4Gi
+    limits.cpu: "8"
+    limits.memory: 8Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    environment: production
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: production-quota
+  namespace: production
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 8Gi
+    limits.cpu: "16"
+    limits.memory: 16Gi
+    pods: "40"

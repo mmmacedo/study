@@ -1,0 +1,17 @@
+# ClusterIP: stream-service não é exposto diretamente ao exterior.
+# O api-gateway (porta 8080) é o único ponto de entrada e roteia /stream/** para cá.
+apiVersion: v1
+kind: Service
+metadata:
+  name: stream-service
+  namespace: staging
+  labels:
+    app: stream-service
+spec:
+  selector:
+    app: stream-service
+  ports:
+  - name: http
+    port: 8083
+    targetPort: 8083
+  type: ClusterIP
