@@ -1,0 +1,152 @@
+{
+  "info": {
+    "_postman_id": "study-api-collection",
+    "name": "Study API — Integration Tests",
+    "description": "Smoke tests da stack completa via api-gateway. Executado pelo Newman no pipeline Jenkins após o Deploy Staging.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",  "value": "http://localhost:8080" },
+    { "key": "token",    "value": "" },
+    { "key": "userId",   "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "GET /actuator/health — auth-service up",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('status UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/actuator/health"
+          }
+        },
+        {
+          "name": "POST /auth/token — obtém JWT",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('access_token presente', () => {",
+            "  const json = pm.response.json();",
+            "  pm.expect(json.access_token).to.be.a('string');",
+            "  pm.collectionVariables.set('token', json.access_token);",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "study-api" },
+                { "key": "username",   "value": "admin" },
+                { "key": "password",   "value": "admin" }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "GET /api/users — lista usuários",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('array de usuários', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "POST /api/users — cria usuário",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 201', () => pm.response.to.have.status(201));",
+            "pm.test('userId presente', () => {",
+            "  const json = pm.response.json();",
+            "  pm.expect(json.id).to.be.a('string');",
+            "  pm.collectionVariables.set('userId', json.id);",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Newman Test\",\"email\":\"newman-{{$randomInt}}@test.com\",\"role\":\"USER\"}"
+            },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "GET /api/users/:id — busca por id",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('id correto', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('userId')));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          }
+        },
+        {
+          "name": "DELETE /api/users/:id — desativa usuário",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 204', () => pm.response.to.have.status(204));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stream",
+      "item": [
+        {
+          "name": "GET /stream/events — headers SSE",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('content-type text/event-stream', () => {",
+            "  pm.expect(pm.response.headers.get('content-type')).to.include('text/event-stream');",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept",        "value": "text/event-stream" }
+            ],
+            "url": "{{baseUrl}}/stream/events"
+          }
+        },
+        {
+          "name": "GET /stream/events — sem token → 401",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 401', () => pm.response.to.have.status(401));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "text/event-stream" }],
+            "url": "{{baseUrl}}/stream/events"
+          }
+        }
+      ]
+    }
+  ]
+}
