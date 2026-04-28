@@ -1,0 +1,63 @@
+# OpenTelemetry Collector — pipeline de telemetria do monorepo.
+#
+# Três sinais OTEL (traces, métricas, logs) chegam dos serviços Spring Boot
+# via OTLP HTTP (:4318) e são roteados para backends diferentes:
+#
+#   traces  → Jaeger (gRPC :4317) para visualização de spans e latência
+#   metrics → debug exporter (stdout do Collector) para estudo do formato OTLP
+#   logs    → debug exporter (stdout do Collector)
+#
+# Spring Boot não exporta logs via OTLP nativamente — eles saem no stdout
+# em formato ECS (structured logging) com trace.id embutido para correlação.
+#
+# Por que Jaeger e não Grafana/Prometheus/Tempo?
+# Jaeger aceita OTLP nativamente (desde v1.35), tem storage e UI próprios
+# em um único container. Foco: entender o pipeline OTEL, não a stack de UI.
+
+receivers:
+  otlp:
+    protocols:
+      # HTTP: usado pelos exporters Spring Boot (micrometer-tracing + otlp-exporter)
+      http:
+        endpoint: "0.0.0.0:4318"
+      # gRPC: disponível para outros instrumentos que preferem gRPC
+      grpc:
+        endpoint: "0.0.0.0:4317"
+
+processors:
+  # batch: acumula telemetria antes de exportar — reduz número de chamadas
+  # ao backend e melhora throughput sem aumentar latência perceptível.
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # Traces → Jaeger via gRPC interno (não exposto externamente)
+  otlp/jaeger:
+    endpoint: "jaeger:4317"
+    tls:
+      insecure: true  # TLS interno entre containers desnecessário
+
+  # Metrics e Logs → stdout do Collector para inspeção do formato OTLP.
+  # verbosity: detailed imprime o payload completo (útil para estudo).
+  # Em produção usar Prometheus ou outro backend de métricas.
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [otlp/jaeger]
+
+    metrics:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [debug]
+
+    logs:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [debug]

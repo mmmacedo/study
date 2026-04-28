@@ -203,11 +203,7 @@ services:
       # defaults definidos no application.yml (postgres/postgres) — não é
       # necessário redeclarar aqui para desenvolvimento.
 
-      # OTel Collector: quando adicionarmos o profile observability,
-      # descomentar e configurar:
-      # OTEL_ENDPOINT: http://otel-collector:4318
-      # Sem isso, o OTLP exporter tenta http://localhost:4318 (inacessível no
-      # container) e falha silenciosamente — funcionalidade não é afetada.
+      OTEL_ENDPOINT: http://otel-collector:4318
 
     ports:
       # Expõe :8082 no host para chamadas diretas via curl/Postman sem gateway.
@@ -244,6 +240,7 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       KEYCLOAK_URL: http://keycloak:8180
       KAFKA_URL: kafka:29092
+      OTEL_ENDPOINT: http://otel-collector:4318
 
     ports:
       - "8081:8081"
@@ -332,6 +329,42 @@ services:
       # WebFlux sobe mais rápido que MVC (sem Flyway/JPA) — 20s é suficiente
       start_period: 20s
 
+
+# =============================================================================
+# Observabilidade — profile: observability
+# docker compose --profile observability up -d
+# =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # OpenTelemetry Collector — recebe OTLP HTTP/gRPC dos serviços Spring Boot
+  # e roteia: traces → Jaeger, metrics/logs → debug exporter (stdout)
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    profiles: [observability]
+    command: ["--config=/etc/otel/collector.yaml"]
+    volumes:
+      - ./infra/otel/collector.yaml:/etc/otel/collector.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP HTTP — recebe telemetria dos serviços
+      - "4317:4317"   # OTLP gRPC — alternativa ao HTTP
+    depends_on:
+      - jaeger
+
+  # ---------------------------------------------------------------------------
+  # Jaeger — backend de tracing com UI em :16686
+  # Aceita OTLP nativamente (desde v1.35) sem sidecar adicional.
+  # Para visualizar traces: http://localhost:16686
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/jaeger:2.6.0
+    profiles: [observability]
+    environment:
+      # Habilita receptor OTLP gRPC interno (porta 4317 da rede interna)
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      # Porta 4317 não exposta no host — só acessível internamente pelo otel-collector
 
 # =============================================================================
 # Volumes nomeados
