@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: staging
+  labels:
+    app: api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - api-gateway
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: api-gateway
+        image: ${REGISTRY}/api-gateway:${IMAGE_TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "docker"
+        - name: KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: keycloak-url
+        - name: OTEL_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: otel-endpoint
+        - name: TRACING_SAMPLING_PROBABILITY
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: tracing-sampling-probability
+        # Redis para rate limiting (token bucket) e circuit breaker state
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        # DNS interno do K8s — <service>.<namespace>.svc.cluster.local
+        # Simplificado para <service> porque todos estão no mesmo namespace
+        - name: USER_SERVICE_URL
+          value: "http://user-service:8082"
+        - name: AUTH_SERVICE_URL
+          value: "http://auth-service:8081"
+        - name: STREAM_SERVICE_URL
+          value: "http://stream-service:8083"
+        - name: JAVA_OPTS
+          value: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseZGC -XX:+ZGenerational"
+        # Menor que os serviços MVC: WebFlux sem DB, mas processa todo o tráfego de entrada
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        # Sem DB/Flyway — startup mais rápido (30s de janela é suficiente)
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          failureThreshold: 15
+          periodSeconds: 2
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          periodSeconds: 10
+          failureThreshold: 3
+        # readinessProbe: garante que o gateway só recebe tráfego quando o Redis
+        # e as rotas estiverem configuradas e prontas.
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          periodSeconds: 5
+          failureThreshold: 3

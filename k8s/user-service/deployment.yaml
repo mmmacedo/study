@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: staging
+  labels:
+    app: user-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - user-service
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: user-service
+        image: ${REGISTRY}/user-service:${IMAGE_TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8082
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "docker"
+        - name: KAFKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: kafka-url
+        - name: KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: keycloak-url
+        - name: OTEL_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: otel-endpoint
+        - name: TRACING_SAMPLING_PROBABILITY
+          valueFrom:
+            configMapKeyRef:
+              name: shared-config
+              key: tracing-sampling-probability
+        # Credenciais do banco via Secret — nunca via ConfigMap (não é criptografado)
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: username
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        - name: JAVA_OPTS
+          value: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+        # Spring MVC + HikariCP (pool de 10 conexões) + JPA requerem mais memória que o WebFlux
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        # startupProbe: janela de 60s (30 * 2s) para o Flyway concluir as migrations
+        # antes de o livenessProbe entrar em ação.
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8082
+          failureThreshold: 30
+          periodSeconds: 2
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8082
+          periodSeconds: 10
+          failureThreshold: 3
+        # readinessProbe: remove o pod do Service enquanto o Flyway estiver rodando
+        # ou o pool de conexões ainda não estiver pronto.
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8082
+          periodSeconds: 5
+          failureThreshold: 3

@@ -1,0 +1,35 @@
+# Ingress: único ponto de entrada externo do cluster.
+# cert-manager provisiona o TLS automaticamente via Let's Encrypt (anotação abaixo).
+# Para desenvolvimento local sem cert-manager, remova as anotações TLS e o bloco tls:.
+#
+# Pré-requisito: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-gateway
+  namespace: staging
+  annotations:
+    # cert-manager emite e renova o certificado TLS automaticamente
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # nginx reescreve o path para remover o prefixo antes de encaminhar ao gateway
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Timeout estendido para SSE (/stream/**) — conexões longas (30s no gateway)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.study.local     # substituir pelo domínio real em production
+    secretName: api-gateway-tls
+  rules:
+  - host: api.study.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 8080
