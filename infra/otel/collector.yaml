@@ -14,6 +14,13 @@
 # Jaeger aceita OTLP nativamente (desde v1.35), tem storage e UI próprios
 # em um único container. Foco: entender o pipeline OTEL, não a stack de UI.
 
+extensions:
+  # health_check: expõe GET /health em :13133.
+  # Usado pelo docker-compose healthcheck para garantir que o Collector
+  # está pronto antes de os serviços Spring Boot tentarem exportar telemetria.
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
 receivers:
   otlp:
     protocols:
@@ -46,6 +53,7 @@ exporters:
     verbosity: detailed
 
 service:
+  extensions: [health_check]
   pipelines:
     traces:
       receivers:  [otlp]
