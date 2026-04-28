@@ -1,4 +1,21 @@
 import type { NextConfig } from "next";
+import withPWAInit from "next-pwa";
+
+// next-pwa usa Workbox por baixo. Em dev o SW é desabilitado para não
+// servir assets cacheados durante o desenvolvimento.
+const withPWA = withPWAInit({
+  dest: "public",   // gerado em public/sw.js e public/workbox-*.js
+  disable: process.env.NODE_ENV === "development",
+  // NetworkFirst para rotas de API — nunca servir tokens expirados do cache.
+  // CacheFirst para assets estáticos (_next/static/) — imutáveis por hash.
+  runtimeCaching: [
+    {
+      urlPattern: /^\/api\//,
+      handler: "NetworkFirst",
+      options: { cacheName: "api-cache", networkTimeoutSeconds: 10 },
+    },
+  ],
+});
 
 const nextConfig: NextConfig = {
   /*
@@ -29,4 +46,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withPWA(nextConfig);

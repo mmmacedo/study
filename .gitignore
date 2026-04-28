@@ -16,6 +16,10 @@ frontend/.next/
 frontend/out/
 frontend/.env.local
 frontend/tsconfig.tsbuildinfo
+frontend/public/sw.js
+frontend/public/workbox-*.js
+frontend/public/sw.js.map
+frontend/public/workbox-*.js.map
 
 # ─── Variáveis de ambiente ────────────────────────────────────────────────────
 .env
